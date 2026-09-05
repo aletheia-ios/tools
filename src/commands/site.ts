@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type List, loadLists } from "@/commands/indexes";
 import { iconPath, type Package, type Repo } from "@/context";
@@ -62,6 +62,7 @@ h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: 
 }
 a.tag { color: inherit; text-decoration: none; }
 a.tag:hover { color: var(--fg); border-color: var(--accent); }
+.reach { margin: .75rem 0 .4rem; font-size: .7rem; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
 footer { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
 footer p { margin: 0 0 .7rem; max-width: 38rem; }
 footer p:last-child { margin-bottom: 0; }
@@ -97,13 +98,31 @@ function gate(): string {
     </section>`;
 }
 
-/** One source's row: icon, name, description and what the app will record about it. */
-function card(pkg: Package): string {
+/**
+ * How a declared host reads to someone deciding whether to trust it.
+ *
+ * A host matches its own subdomains, so `co.uk` really means everything under it. Showing the
+ * literal string would understate that; showing the effective shape does not. A placeholder
+ * resolves to an address the reader typed, so it is named as such rather than shown raw.
+ */
+function reach(entry: string): string {
+  if (entry.startsWith("${")) return "your own server";
+  return `*.${entry}`;
+}
+
+/** One source's row: icon, name, description, and every host it is allowed to contact. */
+function card(pkg: Package, icon: string): string {
   const { manifest } = pkg;
   const languages = manifest.languages.map((code) => code.toUpperCase()).join(", ");
   const rating = manifest.contentRating === "adult" ? "18+" : "Mixed ratings";
+  const hosts =
+    manifest.hosts.length === 0
+      ? '<span class="tag">contacts nothing</span>'
+      : manifest.hosts
+          .map((entry) => `<span class="tag">${escapeHTML(reach(entry))}</span>`)
+          .join("\n            ");
   return `<article class="source">
-        <img src="icons/${escapeHTML(pkg.slug)}.png" alt="" width="48" height="48">
+        <img src="data:image/png;base64,${icon}" alt="" width="48" height="48">
         <div>
           <h3>${escapeHTML(manifest.name)}</h3>
           <p>${escapeHTML(manifest.description)}</p>
@@ -111,7 +130,10 @@ function card(pkg: Package): string {
             <span class="tag">v${escapeHTML(manifest.version)}</span>
             <span class="tag">${escapeHTML(languages)}</span>
             <span class="tag">${rating}</span>
-            <a class="tag" href="sources/${escapeHTML(pkg.slug)}.json">source.json</a>
+          </div>
+          <p class="reach">Contacts</p>
+          <div class="meta">
+            ${hosts}
           </div>
         </div>
       </article>`;
@@ -138,13 +160,13 @@ function notice(): string {
       <p>This list is not an official part of Aletheia, and it is not connected to, endorsed by,
       or approved by any of the sites named above. Their names and logos belong to them.</p>
       <p>No comics, images or accounts are stored or shared here. An entry only tells the app
-      where to go looking, and you can open any entry to see the sites it uses.</p>
+      where to go looking, and every site each one may contact is listed above.</p>
       <p>If you would like something taken off this list, get in touch and it will be removed.</p>
     </footer>`;
 }
 
-/** The whole page for one list. */
-function page(list: List, url: string, members: Package[]): string {
+/** The whole page for one list, with each source's icon already base64 encoded. */
+function page(list: List, url: string, members: [Package, string][]): string {
   const heading = escapeHTML(list.name);
   const count = members.length === 1 ? "1 source" : `${members.length} sources`;
   return `<!doctype html>
@@ -164,7 +186,7 @@ function page(list: List, url: string, members: Package[]): string {
     <div id="list"${list.adult === true ? ' style="display:none"' : ""}>
       ${actions(url)}
       <h2>${count}</h2>
-      ${members.map(card).join("\n      ")}
+      ${members.map(([pkg, icon]) => card(pkg, icon)).join("\n      ")}
     </div>
     ${notice()}
   </main>
@@ -174,24 +196,29 @@ function page(list: List, url: string, members: Package[]): string {
 `;
 }
 
-/** Copies the icon and manifest each card links to, so the page stands alone once deployed. */
-async function assets(repo: Repo, out: string, members: Package[]): Promise<void> {
-  await mkdir(join(out, "icons"), { recursive: true });
-  await mkdir(join(out, "sources"), { recursive: true });
+/**
+ * Reads each source's packed icon as base64, to be inlined in the page.
+ *
+ * @throws `CliError` when a package has not been packed, since the icon is a pack output.
+ */
+async function icons(repo: Repo, members: Package[]): Promise<[Package, string][]> {
+  const pairs: [Package, string][] = [];
   for (const pkg of members) {
-    const icon = iconPath(repo, pkg.slug);
-    if (!existsSync(icon)) throw new CliError([`${pkg.folder}: not packed - run pack first`]);
-    await copyFile(icon, join(out, "icons", `${pkg.slug}.png`));
-    await copyFile(join(pkg.dir, "source.json"), join(out, "sources", `${pkg.slug}.json`));
+    const path = iconPath(repo, pkg.slug);
+    if (!existsSync(path)) throw new CliError([`${pkg.folder}: not packed - run pack first`]);
+    pairs.push([pkg, (await readFile(path)).toString("base64")]);
   }
+  return pairs;
 }
 
 /**
- * The `site` command: writes `dist/<target>/site/` for every list that declares a `url`.
+ * The `site` command: writes `dist/<target>/site/index.html` for every list that declares a
+ * `url`.
  *
- * The page is generated from the same `lists/` and `source.json` data as the index it
- * advertises, so the two cannot disagree. It is static and self-contained: the QR is inlined
- * at build time and each source's icon and manifest are copied in beside it.
+ * One file, no assets. Icons are inlined as data URIs and the QR is inlined as SVG, so the page
+ * can be served from a single object key with nothing beside it, and cannot half-load. It is
+ * generated from the same `lists/` and `source.json` data as the index it advertises, so the
+ * two cannot disagree.
  *
  * A list with no `url` is skipped with a note, since the deep link and QR have nothing to
  * point at until that target's zone exists.
@@ -210,10 +237,10 @@ export async function site(repo: Repo, packages: Package[]): Promise<void> {
       continue;
     }
     const members = list.sources.map((slug) => bySlug.get(slug) as Package);
+    const withIcons = await icons(repo, members);
     const out = sitePath(repo, list.target);
     await mkdir(out, { recursive: true });
-    await assets(repo, out, members);
-    await writeFile(join(out, "index.html"), page(list, list.url, members));
+    await writeFile(join(out, "index.html"), page(list, list.url, withIcons));
     info(`${list.target}/site/index.html: ${members.length} source(s)`);
   }
 }

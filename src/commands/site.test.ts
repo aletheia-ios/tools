@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { capture, cleanupRepos, scaffold, tempRepo } from "@test/repo";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
@@ -36,7 +36,7 @@ describe("site", () => {
     expect(captured.out).toContain("main/site/index.html: 1 source(s)");
   });
 
-  it("copies each source's icon and manifest next to the page", async () => {
+  it("is one self-contained file with the icon inlined and no assets beside it", async () => {
     // arrange
     const repo = await tempRepo({ lists: { main: LIST } });
     capture();
@@ -46,13 +46,53 @@ describe("site", () => {
     // act
     await site(repo, [pkg]);
     const out = sitePath(repo, "main");
-    const manifest = JSON.parse(
-      await readFile(join(out, "sources", "com.example.demo.json"), "utf8"),
-    );
+    const html = await readFile(join(out, "index.html"), "utf8");
+    const beside = await readdir(out);
 
     // assert
-    expect(existsSync(join(out, "icons", "com.example.demo.png"))).toBe(true);
-    expect(manifest.slug).toBe("com.example.demo");
+    expect(beside).toEqual(["index.html"]);
+    expect(html).toContain('<img src="data:image/png;base64,');
+    expect(html).not.toContain('src="icons/');
+    expect(html).not.toContain('href="sources/');
+  });
+
+  it("shows every host a source may reach, as its effective shape", async () => {
+    // arrange
+    const repo = await tempRepo({ lists: { main: LIST } });
+    capture();
+    const pkg = await scaffold(repo, "demo");
+    const manifest = JSON.parse(await readFile(join(pkg.dir, "source.json"), "utf8"));
+    manifest.hosts = ["api.example.com", "${serverURL}"];
+    manifest.settings = [{ type: "text", id: "serverURL", name: "Server" }];
+    manifest.baseURL = "${serverURL}";
+    await writeFile(join(pkg.dir, "source.json"), JSON.stringify(manifest));
+    const { loadPackage } = await import("@/context");
+    const loaded = await loadPackage(repo, "demo");
+    await pack(repo, [loaded]);
+
+    // act
+    await site(repo, [loaded]);
+    const html = await readFile(join(sitePath(repo, "main"), "index.html"), "utf8");
+
+    // assert
+    expect(html).toContain("*.api.example.com");
+    expect(html).toContain("your own server");
+    expect(html).not.toContain("${serverURL}");
+  });
+
+  it("says so when a source contacts nothing", async () => {
+    // arrange
+    const repo = await tempRepo({ lists: { main: LIST } });
+    capture();
+    const pkg = await scaffold(repo, "demo");
+    await pack(repo, [pkg]);
+
+    // act
+    await site(repo, [pkg]);
+    const html = await readFile(join(sitePath(repo, "main"), "index.html"), "utf8");
+
+    // assert
+    expect(html).toContain("contacts nothing");
   });
 
   it("carries the no-affiliation and removal notice", async () => {
