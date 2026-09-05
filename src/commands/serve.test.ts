@@ -104,6 +104,56 @@ describe("serve", () => {
     expect(html).toContain("aletheia://add-list?url=");
   });
 
+  it("answers 304 to a request already holding the current version", async () => {
+    // arrange
+    const repo = await tempRepo({ lists: { sample: SAMPLE } });
+    capture();
+    await scaffold(repo, "demo");
+    const serving = await serve(repo, 0);
+    const url = local(serving, "/sample/index.json");
+    const first = await fetch(url);
+    const etag = first.headers.get("etag");
+
+    // act
+    const matched = await fetch(url, { headers: { "If-None-Match": etag as string } });
+    const stale = await fetch(url, { headers: { "If-None-Match": '"0-0"' } });
+    const body = await matched.text();
+    await serving.close();
+
+    // assert
+    expect(etag).toMatch(/^"[0-9a-f]+-[0-9a-f]+"$/);
+    expect(first.headers.get("content-length")).toBe(
+      String((await first.arrayBuffer()).byteLength),
+    );
+    expect(matched.status).toBe(304);
+    expect(body).toBe("");
+    expect(stale.status).toBe(200);
+    expect(stale.headers.get("etag")).toBe(etag);
+  });
+
+  it("changes the version it reports when a rebuild rewrites the file", async () => {
+    // arrange
+    const repo = await tempRepo({ lists: { sample: SAMPLE } });
+    capture();
+    const pkg = await scaffold(repo, "demo");
+    const serving = await serve(repo, 0);
+    const url = local(serving, "/sample/index.json");
+    const before = (await fetch(url)).headers.get("etag");
+    const index = join(pkg.dir, "src", "index.ts");
+
+    // act
+    await writeFile(index, `${await readFile(index, "utf8")}\n// touched\n`);
+    await vi.waitFor(async () => expect((await fetch(url)).headers.get("etag")).not.toBe(before), {
+      timeout: 15_000,
+      interval: 100,
+    });
+    const after = await fetch(url, { headers: { "If-None-Match": before as string } });
+    await serving.close();
+
+    // assert
+    expect(after.status).toBe(200);
+  });
+
   it("names the port in one line when something already holds it", async () => {
     // arrange
     const repo = await tempRepo({ lists: { sample: SAMPLE } });

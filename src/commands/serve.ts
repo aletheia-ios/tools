@@ -25,7 +25,11 @@ const TRAVERSAL = /^(\.\.[/\\])+/;
 const DEBOUNCE_MS = 300;
 
 const OK = 200;
+const NOT_MODIFIED = 304;
 const NOT_FOUND = 404;
+
+/** Base 16, so the validator stays short. */
+const HEX = 16;
 
 /** A running dev server: the URL it prints and a way to stop it. */
 export interface Serving {
@@ -81,7 +85,29 @@ async function resolveFile(dist: string, url: string): Promise<string | null> {
   return file;
 }
 
-/** A static server over `dist/` that sends `cache-control: no-store` so the app never caches a dev build. */
+/**
+ * A validator for the file as it is right now, from its size and modification time.
+ *
+ * Every rebuild rewrites the file, so the value changes and a conditional request gets the new
+ * bytes. Between rebuilds it is stable, which is the only case that answers 304.
+ */
+function etagOf(size: number, mtimeMs: number): string {
+  return `"${size.toString(HEX)}-${Math.trunc(mtimeMs).toString(HEX)}"`;
+}
+
+/** Whether the request already holds this version. A client may offer several. */
+function offers(header: string | undefined, etag: string): boolean {
+  if (header === undefined) return false;
+  return header.split(",").some((candidate) => candidate.trim() === etag);
+}
+
+/**
+ * A static server over `dist/`.
+ *
+ * Sends `cache-control: no-store` so nothing holds on to a dev build, alongside an `ETag` so a
+ * client that asks can still be told nothing changed. The two are not in tension: `no-store`
+ * governs whether a copy may be kept, the validator governs whether a fetch has to transfer.
+ */
 function fileServer(dist: string): Server {
   return createServer(async (request, response) => {
     const file = await resolveFile(dist, request.url ?? "/");
@@ -89,9 +115,17 @@ function fileServer(dist: string): Server {
       response.writeHead(NOT_FOUND).end();
       return;
     }
+    const { size, mtimeMs } = await stat(file);
+    const etag = etagOf(size, mtimeMs);
+    if (offers(request.headers["if-none-match"], etag)) {
+      response.writeHead(NOT_MODIFIED, { etag, "cache-control": "no-store" }).end();
+      return;
+    }
     response.writeHead(OK, {
       "content-type": TYPES[extname(file)] ?? "application/octet-stream",
       "cache-control": "no-store",
+      "content-length": size,
+      etag,
     });
     createReadStream(file).pipe(response);
   });
