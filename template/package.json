@@ -1,0 +1,9 @@
+{
+  "name": "@aletheia-source/__SLUG__",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@aletheia-ios/sdk": "^0.1.0",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "series": [
+    {
+      "slug": "series",
+      "title": "Example Series",
+      "synopsis": "A series that exists only to prove the package loads.",
+      "tags": ["Action"],
+      "authors": ["Example Author"],
+      "chapters": [
+        {
+          "slug": "chapter",
+          "title": "Chapter 1",
+          "pages": ["https://example.com/pages/1.png", "https://example.com/pages/2.png"]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+[
+  {
+    "kind": "multiSelect",
+    "id": "genre",
+    "name": "Genres",
+    "canExclude": false,
+    "options": [{ "id": "action", "name": "Action" }, { "id": "romance", "name": "Romance" }]
+  }
+]

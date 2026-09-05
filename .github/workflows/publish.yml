@@ -1,0 +1,26 @@
+name: publish
+
+on:
+  push:
+    tags: ["v*"]
+
+# oidc trusted publishing
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: npm install -g npm@latest
+      - run: npm publish --access public

@@ -1,0 +1,7 @@
+packages: []
+
+# each runs a postinstall (platform binaries, git hooks), which pnpm 10 blocks by default
+onlyBuiltDependencies:
+  - esbuild
+  - lefthook
+  - sharp
