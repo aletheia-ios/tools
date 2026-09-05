@@ -1,6 +1,6 @@
 {
   "name": "@aletheia-ios/tools",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "The aletheia CLI: build, check, pack, index and serve source packages",
   "license": "MIT",
   "repository": {
