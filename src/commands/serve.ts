@@ -7,7 +7,7 @@ import { indexes, loadLists } from "@/commands/indexes";
 import { pack } from "@/commands/pack";
 import { site, sitePath } from "@/commands/site";
 import { loadPackages, type Repo } from "@/context";
-import { info, report } from "@/lib/log";
+import { CliError, info, report } from "@/lib/log";
 
 /** Content types for what `dist/` holds; anything else is served as octet-stream. */
 const TYPES: Record<string, string> = {
@@ -114,13 +114,42 @@ function watchRepo(repo: Repo): FSWatcher[] {
 }
 
 /**
+ * Binds the port and reports the one it got, since port 0 picks a free one.
+ *
+ * A busy port is the common way this fails and it arrives as an `error` event rather than a
+ * rejection, so without this it surfaces as an unhandled event and a stack trace.
+ *
+ * @throws `CliError` naming the port when something already holds it.
+ */
+async function listen(server: Server, port: number): Promise<number> {
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(port, "0.0.0.0", () => {
+        server.removeListener("error", reject);
+        resolve();
+      });
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EADDRINUSE") {
+      throw new CliError([`port ${port} is already in use - pass --port <n> to pick another`], {
+        cause: error,
+      });
+    }
+    throw error;
+  }
+  const address = server.address();
+  return typeof address === "object" && address !== null ? address.port : port;
+}
+
+/**
  * The `serve` command: packs, indexes, serves `dist/` on the lan and rebuilds on change.
  *
  * Binds every interface and prints the lan URL of each list's `index.json`, which is what
  * the app's developer list points at. Port 0 binds a free port. Resolves once listening;
  * the returned `close` stops the watchers and the server.
  *
- * @throws `CliError` when there is no `lists/` directory, before any port is bound.
+ * @throws `CliError` when there is no `lists/` directory, or when the port is taken.
  */
 export async function serve(repo: Repo, port: number): Promise<Serving> {
   const lists = await loadLists(repo);
@@ -128,9 +157,13 @@ export async function serve(repo: Repo, port: number): Promise<Serving> {
   const server = fileServer(repo.dist);
   const watchers = watchRepo(repo);
 
-  await new Promise<void>((resolve) => server.listen(port, "0.0.0.0", resolve));
-  const address = server.address();
-  const bound = typeof address === "object" && address !== null ? address.port : port;
+  let bound: number;
+  try {
+    bound = await listen(server, port);
+  } catch (error) {
+    for (const watcher of watchers) watcher.close();
+    throw error;
+  }
   const url = `http://${lanAddress()}:${bound}/`;
   info(`serving ${repo.dist} on ${url}`);
   for (const list of lists) {

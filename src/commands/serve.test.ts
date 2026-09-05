@@ -104,6 +104,23 @@ describe("serve", () => {
     expect(html).toContain("aletheia://add-list?url=");
   });
 
+  it("names the port in one line when something already holds it", async () => {
+    // arrange
+    const repo = await tempRepo({ lists: { sample: SAMPLE } });
+    capture();
+    await scaffold(repo, "demo");
+    const held = await serve(repo, 0);
+    const port = Number(new URL(held.url).port);
+
+    // act
+    const attempt = serve(repo, port);
+
+    // assert
+    await expect(attempt).rejects.toThrow(`port ${port} is already in use`);
+    await expect(attempt).rejects.toThrow(/--port <n>/);
+    await held.close();
+  });
+
   it("requires a lists/ directory before it binds a port", async () => {
     // arrange
     const repo = await tempRepo();
