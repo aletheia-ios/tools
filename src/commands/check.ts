@@ -24,7 +24,7 @@ const OPTIONAL = ["comments", "replies", "chaptersChanged", "isChallenge", "ping
 function typecheck(repo: Repo, pkg: Package): string[] {
   const tsc = join(repo.root, "node_modules", ".bin", "tsc");
   if (!existsSync(tsc)) {
-    warn(`${pkg.slug}: typescript is not installed in this repository, skipping typecheck`);
+    warn(`${pkg.folder}: typescript is not installed in this repository, skipping typecheck`);
     return [];
   }
   const child = spawnSync(tsc, ["-p", join(pkg.dir, "tsconfig.json"), "--noEmit"], {
@@ -37,7 +37,7 @@ function typecheck(repo: Repo, pkg: Package): string[] {
 /** The icon problems for a package as lines, empty when it has exactly one icon. */
 function icon(pkg: Package): string[] {
   try {
-    findIcon(pkg.dir, pkg.slug);
+    findIcon(pkg.dir, pkg.folder);
     return [];
   } catch (error) {
     if (error instanceof CliError) return error.lines;
@@ -56,25 +56,25 @@ async function evaluate(pkg: Package, path: string): Promise<string[]> {
   const bundle = await readFile(path, "utf8");
   const exported = exportsOf(bundle);
   if (!exported.ok || exported.result === null) {
-    return [`${pkg.slug}: main.js failed to evaluate in JavaScriptCore\n${exported.output}`];
+    return [`${pkg.folder}: main.js failed to evaluate in JavaScriptCore\n${exported.output}`];
   }
   const missing = REQUIRED.filter((name) => exported.result?.[name] !== "function");
-  if (missing.length > 0) return missing.map((name) => `${pkg.slug}: missing export ${name}()`);
+  if (missing.length > 0) return missing.map((name) => `${pkg.folder}: missing export ${name}()`);
 
   const capabilities = OPTIONAL.filter((name) => exported.result?.[name] === "function");
   if (pkg.auth !== null) capabilities.push("auth");
-  const label = `${pkg.slug}: ok [${capabilities.join(", ") || "base"}]`;
+  const label = `${pkg.folder}: ok [${capabilities.join(", ") || "base"}]`;
 
   const fixturesPath = join(pkg.dir, "fixtures", "smoke.json");
   if (!existsSync(fixturesPath)) {
-    warn(`${pkg.slug}: no fixtures/smoke.json - exports verified, calls not exercised`);
+    warn(`${pkg.folder}: no fixtures/smoke.json - exports verified, calls not exercised`);
     info(label);
     return [];
   }
   const fixtures = JSON.parse(await readFile(fixturesPath, "utf8")) as Fixture[];
   const result = smoke(bundle, fixtures);
   if (!result.ok || result.result === null) {
-    return [`${pkg.slug}: smoke failed in JavaScriptCore\n${result.output}`];
+    return [`${pkg.folder}: smoke failed in JavaScriptCore\n${result.output}`];
   }
   const out = result.result;
   info(

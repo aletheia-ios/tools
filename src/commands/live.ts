@@ -23,7 +23,9 @@ function evaluate(bundle: string, hosts: string[]): LiveSource {
     __host: {
       async fetch(request: Request): Promise<Response> {
         const { host } = new URL(request.url);
-        if (!hosts.includes(host)) throw new Error(`host not allowed by source.json: ${host}`);
+        // subdomains of a declared host are allowed, matching what the app enforces
+        const allowed = hosts.some((name) => host === name || host.endsWith(`.${name}`));
+        if (!allowed) throw new Error(`host not allowed by source.json: ${host}`);
         const response = await fetch(request.url, {
           method: request.method ?? "GET",
           headers: { "user-agent": "aletheia-tools live", ...(request.headers ?? {}) },

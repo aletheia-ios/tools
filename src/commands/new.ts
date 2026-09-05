@@ -10,8 +10,8 @@ const TEMPLATE = join(OWN_ROOT, "template");
 /** File extensions that get placeholder substitution; everything else is copied verbatim. */
 const TEXT = new Set([".json", ".ts", ".md"]);
 
-/** A valid package slug: lowercase letters, digits and hyphens. */
-const SLUG = /^[a-z0-9-]+$/;
+/** A valid package slug: reverse-DNS, matching the sdk's `slug` scalar. */
+const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*(\.[a-z0-9]+(-[a-z0-9]+)*)+$/;
 
 /** A placeholder as written in the template and the text that replaces it. */
 type Substitution = [placeholder: string, value: string];
@@ -43,16 +43,17 @@ async function substitute(dir: string, values: Substitution[]): Promise<void> {
  */
 export async function create(repo: Repo, slug: string, name: string): Promise<void> {
   if (!SLUG.test(slug)) {
-    throw new CliError([`"${slug}" is not a slug - lowercase letters, digits and hyphens only`]);
+    throw new CliError([`"${slug}" is not a slug - reverse-dns, such as com.example.mysite`]);
   }
-  const dir = join(repo.packages, slug);
-  if (existsSync(dir)) throw new CliError([`packages/${slug} already exists`]);
+  const folder = slug.slice(slug.lastIndexOf(".") + 1);
+  const dir = join(repo.packages, folder);
+  if (existsSync(dir)) throw new CliError([`packages/${folder} already exists`]);
   await cp(TEMPLATE, dir, { recursive: true });
   await substitute(dir, [
     ["__SLUG__", slug],
     ["__NAME__", name],
   ]);
   info(
-    `created packages/${slug} - it passes \`aletheia check\` as an offline source; replace src/ with the real one`,
+    `created packages/${folder} - it passes \`aletheia check\` as an offline source; replace src/ with the real one`,
   );
 }

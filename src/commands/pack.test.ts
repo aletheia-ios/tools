@@ -27,7 +27,7 @@ describe("pack", () => {
     const icon = await sharp(packed?.icon).metadata();
 
     // assert
-    expect(packed?.path).toBe(join(repo.dist, "packages", "demo-v0.1.0.althsource"));
+    expect(packed?.path).toBe(join(repo.dist, "packages", "com.example.demo-v0.1.0.althsource"));
     expect(Object.keys(entries).sort()).toEqual([
       "filters.json",
       "icon.png",
@@ -39,7 +39,7 @@ describe("pack", () => {
     expect(icon.width).toBe(512);
     expect(captured.out).toContainEqual(
       expect.stringMatching(
-        /^demo: dist\/packages\/demo-v0\.1\.0\.althsource \d+\.\d kB [0-9a-f]{12}$/,
+        /^demo: dist\/packages\/com\.example\.demo-v0\.1\.0\.althsource \d+\.\d kB [0-9a-f]{12}$/,
       ),
     );
   });

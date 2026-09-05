@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import process from "node:process";
@@ -22,7 +22,10 @@ export interface Repo {
 
 /** One source package, loaded and validated: its folder plus the parsed json files. */
 export interface Package {
+  /** The manifest's reverse-DNS slug: the package's global identity. */
   slug: string;
+  /** The directory name under `packages/`, which is what `--only` and progress lines use. */
+  folder: string;
   dir: string;
   manifest: Manifest;
   filters: FilterList;
@@ -48,6 +51,20 @@ function ownRoot(): string {
 
 /** The folder this cli is installed in, holding `template/` and its own `node_modules/`. */
 export const OWN_ROOT = ownRoot();
+
+/**
+ * This cli's own `name@version`, recorded in each index entry.
+ *
+ * A bundler upgrade can change `main.js` for unchanged source, so two lists can hold the same
+ * package at different shas without anyone tampering. This is what tells them apart.
+ */
+export const BUILT_WITH = ((): string => {
+  const own = JSON.parse(readFileSync(join(OWN_ROOT, "package.json"), "utf8")) as {
+    name: string;
+    version: string;
+  };
+  return `${own.name}@${own.version}`;
+})();
 
 /**
  * Locates the repository from a working directory: the nearest ancestor holding `packages/`.
@@ -87,6 +104,17 @@ async function readJSON(path: string): Promise<unknown> {
   }
 }
 
+/**
+ * Whether a manifest slug belongs in a folder of this name.
+ *
+ * Slugs are reverse-DNS, so `packages/mangadex` holding `com.example.mangadex` keeps the
+ * folder list readable. The full slug is accepted too, which is the way out when two
+ * publishers' packages in one repository end in the same segment.
+ */
+function namesFolder(slug: string, folder: string): boolean {
+  return slug === folder || slug.slice(slug.lastIndexOf(".") + 1) === folder;
+}
+
 /** Turns a failed parse into `file path: message` lines; empty for a successful one. */
 function issues(file: string, result: z.ZodSafeParseResult<unknown>): string[] {
   if (result.success) return [];
@@ -104,15 +132,16 @@ function issues(file: string, result: z.ZodSafeParseResult<unknown>): string[] {
  *
  * @throws `CliError` listing every problem found.
  */
-export async function loadPackage(repo: Repo, slug: string): Promise<Package> {
-  const dir = join(repo.packages, slug);
+export async function loadPackage(repo: Repo, folder: string): Promise<Package> {
+  const dir = join(repo.packages, folder);
+  const slug = folder;
   const problems: string[] = [];
 
   const manifestResult = SourceManifest.safeParse(await readJSON(join(dir, "source.json")));
   problems.push(...issues(`${slug}/source.json`, manifestResult));
-  if (manifestResult.success && manifestResult.data.slug !== slug) {
+  if (manifestResult.success && !namesFolder(manifestResult.data.slug, slug)) {
     problems.push(
-      `${slug}/source.json slug: "${manifestResult.data.slug}" must match the folder name`,
+      `${slug}/source.json slug: "${manifestResult.data.slug}" must match the folder name or end with it`,
     );
   }
 
@@ -131,7 +160,14 @@ export async function loadPackage(repo: Repo, slug: string): Promise<Package> {
   if (problems.length > 0 || !manifestResult.success || !filtersResult.success) {
     throw new CliError(problems);
   }
-  return { slug, dir, manifest: manifestResult.data, filters: filtersResult.data, auth };
+  return {
+    slug: manifestResult.data.slug,
+    folder,
+    dir,
+    manifest: manifestResult.data,
+    filters: filtersResult.data,
+    auth,
+  };
 }
 
 /**

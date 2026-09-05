@@ -48,11 +48,11 @@ describe("aletheia", () => {
   it("runs new, check, pack and index end to end from a nested directory", async () => {
     // arrange
     const repo = await tempRepo({
-      lists: { sample: { name: "Test", target: "sample", sources: ["demo"] } },
+      lists: { sample: { name: "Test", target: "sample", sources: ["com.example.demo"] } },
     });
 
     // act
-    const created = aletheia(repo.root, "new", "demo", "--name", "Demo Source");
+    const created = aletheia(repo.root, "new", "com.example.demo", "--name", "Demo Source");
     const checked = aletheia(join(repo.packages, "demo"), "check", "--only", "demo");
     const packed = aletheia(repo.root, "pack");
     const indexed = aletheia(repo.root, "index");
@@ -63,15 +63,16 @@ describe("aletheia", () => {
     expect(checked.status).toBe(0);
     expect(checked.out).toMatch(/demo: ok \[base\] - "Example Series"/);
     expect(packed.status).toBe(0);
-    expect(existsSync(join(repo.dist, "packages", "demo-v0.1.0.althsource"))).toBe(true);
+    const archive = join(repo.dist, "packages", "com.example.demo-v0.1.0.althsource");
+    expect(existsSync(archive)).toBe(true);
     expect(indexed.status).toBe(0);
-    expect(index.sources[0].slug).toBe("demo");
+    expect(index.sources[0].slug).toBe("com.example.demo");
   });
 
   it("reports a broken manifest with its path and exits 1", async () => {
     // arrange
     const repo = await tempRepo();
-    aletheia(repo.root, "new", "bad");
+    aletheia(repo.root, "new", "com.example.bad");
     const file = join(repo.packages, "bad", "source.json");
     const manifest = JSON.parse(await readFile(file, "utf8"));
     manifest.sort.default = "nope";

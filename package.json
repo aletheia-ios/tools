@@ -1,6 +1,6 @@
 {
   "name": "@aletheia-ios/tools",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The aletheia CLI: build, check, pack, index and serve source packages",
   "license": "MIT",
   "repository": {
@@ -32,9 +32,10 @@
     "prepare": "lefthook install"
   },
   "dependencies": {
-    "@aletheia-ios/sdk": "^0.1.0",
+    "@aletheia-ios/sdk": "^0.2.0",
     "esbuild": "^0.28.2",
     "fflate": "^0.8.3",
+    "qrcode-generator": "^2.0.4",
     "sharp": "^0.35.4",
     "zod": "^4.5.4"
   },

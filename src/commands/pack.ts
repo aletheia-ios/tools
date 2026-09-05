@@ -33,7 +33,7 @@ export async function pack(repo: Repo, packages: Package[]): Promise<Packed[]> {
   const built = await build(repo, packages);
   const packed: Packed[] = [];
   for (const { pkg, path } of built) {
-    const icon = await rasterise(findIcon(pkg.dir, pkg.slug), pkg.slug);
+    const icon = await rasterise(findIcon(pkg.dir, pkg.folder), pkg.folder);
     const files: Record<string, Uint8Array> = {
       "source.json": await readFile(join(pkg.dir, "source.json")),
       "filters.json": await readFile(join(pkg.dir, "filters.json")),
@@ -54,7 +54,7 @@ export async function pack(repo: Repo, packages: Package[]): Promise<Packed[]> {
 
     const sha256 = createHash("sha256").update(zip).digest("hex");
     info(
-      `${pkg.slug}: ${out.slice(repo.root.length + 1)} ${kb(zip.byteLength)} ${sha256.slice(0, SHORT_HASH)}`,
+      `${pkg.folder}: ${out.slice(repo.root.length + 1)} ${kb(zip.byteLength)} ${sha256.slice(0, SHORT_HASH)}`,
     );
     packed.push({ pkg, path: out, icon: iconOut, bytes: zip.byteLength, sha256 });
   }

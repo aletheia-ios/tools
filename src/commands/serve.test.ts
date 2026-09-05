@@ -10,7 +10,7 @@ afterEach(() => {
 
 afterAll(cleanupRepos);
 
-const SAMPLE = { name: "Test", target: "sample", sources: ["demo"] };
+const SAMPLE = { name: "Test", target: "sample", sources: ["com.example.demo"] };
 
 // the server binds every interface and prints the lan address; loopback reaches the same socket
 function local(serving: Serving, path: string): string {
@@ -28,8 +28,8 @@ describe("serve", () => {
 
     // act
     const index = await fetch(local(serving, "/sample/index.json"));
-    const icon = await fetch(local(serving, "/icons/demo.png"));
-    const archive = await fetch(local(serving, "/packages/demo-v0.1.0.althsource"));
+    const icon = await fetch(local(serving, "/icons/com.example.demo.png"));
+    const archive = await fetch(local(serving, "/packages/com.example.demo-v0.1.0.althsource"));
     const other = await fetch(local(serving, "/notes.txt"));
     const body = (await index.json()) as { sources: Array<{ slug: string }> };
     await serving.close();
@@ -38,7 +38,7 @@ describe("serve", () => {
     expect(index.status).toBe(200);
     expect(index.headers.get("content-type")).toBe("application/json");
     expect(index.headers.get("cache-control")).toBe("no-store");
-    expect(body.sources[0]?.slug).toBe("demo");
+    expect(body.sources[0]?.slug).toBe("com.example.demo");
     expect(icon.headers.get("content-type")).toBe("image/png");
     expect(archive.headers.get("content-type")).toBe("application/zip");
     expect(other.headers.get("content-type")).toBe("application/octet-stream");
@@ -82,6 +82,26 @@ describe("serve", () => {
     // assert
     expect(status).toBe(404);
     expect(captured.err).toContainEqual(expect.stringMatching(/demo\/filters\.json/));
+  });
+
+  it("serves the generated page and resolves a directory to its index.html", async () => {
+    // arrange
+    const repo = await tempRepo({
+      lists: { sample: { ...SAMPLE, url: "https://example.com/sample/index.json" } },
+    });
+    capture();
+    await scaffold(repo, "demo");
+    const serving = await serve(repo, 0);
+
+    // act
+    const page = await fetch(local(serving, "/sample/site/"));
+    const html = await page.text();
+    await serving.close();
+
+    // assert
+    expect(page.status).toBe(200);
+    expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(html).toContain("aletheia://add-list?url=");
   });
 
   it("requires a lists/ directory before it binds a port", async () => {

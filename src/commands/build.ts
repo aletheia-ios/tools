@@ -33,7 +33,7 @@ export interface Built {
  *   `@aletheia-ios/sdk/schemas` and would ship a validator to every phone.
  */
 export async function buildOne(repo: Repo, pkg: Package): Promise<Built> {
-  const outfile = bundlePath(repo, pkg.slug);
+  const outfile = bundlePath(repo, pkg.folder);
   await mkdir(dirname(outfile), { recursive: true });
   const result = await esbuild({
     entryPoints: [join(pkg.dir, "src", "index.ts")],
@@ -52,7 +52,7 @@ export async function buildOne(repo: Repo, pkg: Package): Promise<Built> {
   const inputs = Object.keys(result.metafile.inputs);
   if (inputs.some((input) => ZOD_INPUT.test(input))) {
     throw new CliError([
-      `${pkg.slug}: main.js bundles zod - a source must not import @aletheia-ios/sdk/schemas`,
+      `${pkg.folder}: main.js bundles zod - a source must not import @aletheia-ios/sdk/schemas`,
     ]);
   }
   const bytes = Object.values(result.metafile.outputs)[0]?.bytes ?? 0;
@@ -64,7 +64,7 @@ export async function build(repo: Repo, packages: Package[]): Promise<Built[]> {
   const built: Built[] = [];
   for (const pkg of packages) {
     const one = await buildOne(repo, pkg);
-    info(`${pkg.slug}: main.js ${kb(one.bytes)}`);
+    info(`${pkg.folder}: main.js ${kb(one.bytes)}`);
     built.push(one);
   }
   return built;

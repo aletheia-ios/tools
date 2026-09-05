@@ -94,7 +94,8 @@ describe("loadPackage", () => {
     const pkg = await scaffold(repo, "demo", "Demo Source");
 
     // assert
-    expect(pkg.slug).toBe("demo");
+    expect(pkg.slug).toBe("com.example.demo");
+    expect(pkg.folder).toBe("demo");
     expect(pkg.dir).toBe(join(repo.packages, "demo"));
     expect(pkg.manifest.name).toBe("Demo Source");
     expect(pkg.filters).toHaveLength(1);
@@ -121,7 +122,7 @@ describe("loadPackage", () => {
     capture();
     const pkg = await scaffold(repo, "demo");
     const manifest = JSON.parse(await readFile(join(pkg.dir, "source.json"), "utf8"));
-    manifest.slug = "other";
+    manifest.slug = "com.example.other";
     await writeFile(join(pkg.dir, "source.json"), JSON.stringify(manifest));
     await writeFile(join(pkg.dir, "filters.json"), JSON.stringify([{ kind: "nope" }]));
     await writeFile(join(pkg.dir, "auth.json"), JSON.stringify({}));
@@ -133,7 +134,7 @@ describe("loadPackage", () => {
     // assert
     await expect(attempt).rejects.toThrow(CliError);
     await expect(attempt).rejects.toThrow(
-      /demo\/source\.json slug: "other" must match the folder name/,
+      /demo\/source\.json slug: "com\.example\.other" must match the folder name or end with it/,
     );
     await expect(attempt).rejects.toThrow(/demo\/filters\.json/);
     await expect(attempt).rejects.toThrow(/demo\/auth\.json/);
@@ -169,7 +170,7 @@ describe("loadPackages", () => {
     const packages = await loadPackages(repo);
 
     // assert
-    expect(packages.map((pkg) => pkg.slug)).toEqual(["alpha", "zeta"]);
+    expect(packages.map((pkg) => pkg.folder)).toEqual(["alpha", "zeta"]);
   });
 
   it("narrows to --only and rejects names that do not exist", async () => {
@@ -184,7 +185,7 @@ describe("loadPackages", () => {
     const attempt = loadPackages(repo, ["beta", "gamma"]);
 
     // assert
-    expect(only.map((pkg) => pkg.slug)).toEqual(["beta"]);
+    expect(only.map((pkg) => pkg.folder)).toEqual(["beta"]);
     await expect(attempt).rejects.toThrow(/no package "gamma"/);
   });
 
@@ -214,13 +215,13 @@ describe("paths", () => {
     const pkg = await scaffold(repo, "demo");
 
     // act
-    const bundle = bundlePath(repo, "demo");
+    const bundle = bundlePath(repo, pkg.folder);
     const archive = packagePath(repo, pkg);
-    const icon = iconPath(repo, "demo");
+    const icon = iconPath(repo, pkg.slug);
 
-    // assert
+    // assert: build output is keyed by folder, published artefacts by slug
     expect(bundle).toBe(join(repo.dist, "build", "demo", "main.js"));
-    expect(archive).toBe(join(repo.dist, "packages", "demo-v0.1.0.althsource"));
-    expect(icon).toBe(join(repo.dist, "icons", "demo.png"));
+    expect(archive).toBe(join(repo.dist, "packages", "com.example.demo-v0.1.0.althsource"));
+    expect(icon).toBe(join(repo.dist, "icons", "com.example.demo.png"));
   });
 });

@@ -6,16 +6,22 @@ import { basename, join, relative } from "node:path";
 import { Index } from "@aletheia-ios/sdk/schemas";
 import type { IndexEntry } from "@aletheia-ios/sdk/types";
 import { z } from "zod";
-import { iconPath, type Package, packagePath, type Repo } from "@/context";
+import { BUILT_WITH, iconPath, type Package, packagePath, type Repo } from "@/context";
 import { CliError, info } from "@/lib/log";
 
 /**
  * Validates one `lists/<name>.json`: the list's display name, the `dist/<target>` folder
  * it publishes to, and the package slugs it includes.
+ *
+ * `url` is where that target's `index.json` will be served once deployed. Only `site` needs
+ * it, to build the deep link and QR a reader adds the list with, so it stays optional until
+ * the zone exists. `adult` puts an age gate in front of the generated page.
  */
 const List = z.strictObject({
   name: z.string().min(1),
   target: z.string().regex(/^[a-z0-9-]+$/),
+  url: z.url().optional(),
+  adult: z.boolean().optional(),
   sources: z.array(z.string().min(1)).min(1),
 });
 
@@ -71,11 +77,14 @@ function updatedDate(pkg: Package): string {
  */
 async function entry(repo: Repo, pkg: Package, target: string): Promise<IndexEntry> {
   const path = packagePath(repo, pkg);
-  if (!existsSync(path)) throw new CliError([`${pkg.slug}: not packed - run pack first`]);
+  if (!existsSync(path)) throw new CliError([`${pkg.folder}: not packed - run pack first`]);
   const bytes = await readFile(path);
   const base = join(repo.dist, target);
   return {
     slug: pkg.slug,
+    // advisory here so a list can explain a slug that vanished from it; the app applies the
+    // namespace rule against the manifest's copy, never this one
+    ...(pkg.manifest.replaces === undefined ? {} : { replaces: pkg.manifest.replaces }),
     name: pkg.manifest.name,
     version: pkg.manifest.version,
     minAppVersion: pkg.manifest.minAppVersion,
@@ -87,6 +96,7 @@ async function entry(repo: Repo, pkg: Package, target: string): Promise<IndexEnt
     updatedDate: updatedDate(pkg),
     downloadURL: relative(base, path),
     iconURL: relative(base, iconPath(repo, pkg.slug)),
+    builtWith: BUILT_WITH,
   };
 }
 

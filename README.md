@@ -15,6 +15,7 @@ usage: aletheia <command> [options]
   check [--only <slug>]     typecheck, build, verify exports and run fixtures under JavaScriptCore
   pack  [--only <slug>]     build, rasterise the icon and zip to dist/packages/<slug>-v<version>.althsource
   index                     write dist/<target>/index.json for every list in lists/
+  site                      write dist/<target>/site/ - the page a reader adds the list from
   serve [--port <n>]        pack, index, serve dist/ on the lan and rebuild on change
   new <slug> [--name <n>]   scaffold packages/<slug> from the template
   live <slug> <series|-> [query]
@@ -32,6 +33,10 @@ my-sources/
     main.json        { "name": "My Sources", "target": "main", "sources": ["mangadex"] }
   dist/              generated
 ```
+
+A list may also carry `"url"`, where that target's `index.json` will be served once deployed,
+and `"adult": true`. Only `site` reads them: the first is what the deep link and QR point at,
+the second puts an age gate in front of the page.
 
 `aletheia` finds the nearest `packages/` above the working directory. Every package folder
 name is its slug and must match `source.json`.
@@ -57,6 +62,14 @@ as one package because of this.
 `dist/<target>/index.json` (validated against the sdk's `Index` schema, relative URLs, sha256,
 size, the package folder's last commit date) plus `dist/<target>/manifest.json` naming the
 package and icon files that target's deploy has to upload.
+
+**site** - for every list that declares a `url`, writes `dist/<target>/site/`: a static page
+with an `aletheia://add-list` deep link, the URL, and a QR inlined as SVG at build time, then
+a card per source carrying its icon, version, languages and rating. Each source's `icon.png`
+and `source.json` are copied in beside the page, so the folder deploys as-is and every card
+can link to the manifest that says what that source contacts. Generated from the same data as
+the index, so the two cannot disagree. A list marked `"adult": true` gets an age gate that
+fails closed without script.
 
 **serve** - runs pack and index, serves `dist/` on the LAN with `cache-control: no-store`, and
 reruns both when anything under `packages/` or `lists/` changes. Point the app's developer list

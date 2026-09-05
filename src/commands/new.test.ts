@@ -19,12 +19,12 @@ describe("create", () => {
     const captured = capture();
 
     // act
-    await create(repo, "demo", "Demo Source");
+    await create(repo, "com.example.demo", "Demo Source");
     const manifest = JSON.parse(await readFile(join(repo.packages, "demo", "source.json"), "utf8"));
     const index = await readFile(join(repo.packages, "demo", "src", "index.ts"), "utf8");
 
     // assert
-    expect(manifest.slug).toBe("demo");
+    expect(manifest.slug).toBe("com.example.demo");
     expect(manifest.name).toBe("Demo Source");
     expect(index).toContain('scanlator: "Demo Source"');
     expect(index).not.toContain("__NAME__");
@@ -37,21 +37,32 @@ describe("create", () => {
     const repo = await tempRepo();
 
     // act
-    const attempt = create(repo, "Bad_Slug", "Bad");
+    const attempt = create(repo, "com.example.Bad_Slug", "Bad");
 
     // assert
     await expect(attempt).rejects.toThrow(CliError);
-    await expect(attempt).rejects.toThrow(/"Bad_Slug" is not a slug/);
+    await expect(attempt).rejects.toThrow(/"com.example.Bad_Slug" is not a slug/);
+  });
+
+  it("refuses a bare slug that is not namespaced", async () => {
+    // arrange
+    const repo = await tempRepo();
+
+    // act
+    const attempt = create(repo, "demo", "Demo");
+
+    // assert
+    await expect(attempt).rejects.toThrow(/reverse-dns, such as com.example.mysite/);
   });
 
   it("refuses to overwrite an existing package", async () => {
     // arrange
     const repo = await tempRepo();
     capture();
-    await create(repo, "demo", "Demo");
+    await create(repo, "com.example.demo", "Demo");
 
     // act
-    const attempt = create(repo, "demo", "Demo");
+    const attempt = create(repo, "com.example.demo", "Demo");
 
     // assert
     await expect(attempt).rejects.toThrow(/packages\/demo already exists/);

@@ -5,6 +5,7 @@ import { networkInterfaces } from "node:os";
 import { extname, join, normalize } from "node:path";
 import { indexes, loadLists } from "@/commands/indexes";
 import { pack } from "@/commands/pack";
+import { site, sitePath } from "@/commands/site";
 import { loadPackages, type Repo } from "@/context";
 import { info, report } from "@/lib/log";
 
@@ -14,6 +15,7 @@ const TYPES: Record<string, string> = {
   ".png": "image/png",
   ".althsource": "application/zip",
   ".js": "text/javascript",
+  ".html": "text/html; charset=utf-8",
 };
 
 /** Leading `../` segments left after normalisation, which would escape `dist/`. */
@@ -42,6 +44,7 @@ async function rebuild(repo: Repo): Promise<void> {
     const packages = await loadPackages(repo);
     await pack(repo, packages);
     await indexes(repo, packages);
+    await site(repo, packages);
   } catch (error) {
     report(error);
   }
@@ -60,8 +63,9 @@ function lanAddress(): string {
 /**
  * The file under `dist/` a request names, or null when it names nothing servable.
  *
- * Null covers a missing file, a directory, a path that would escape `dist/`, and a URL
- * that does not decode.
+ * A directory resolves to its `index.html` when it has one, the way Pages will serve the
+ * generated site. Null covers a missing file, a directory without one, a path that would
+ * escape `dist/`, and a URL that does not decode.
  */
 async function resolveFile(dist: string, url: string): Promise<string | null> {
   let path: string;
@@ -70,9 +74,11 @@ async function resolveFile(dist: string, url: string): Promise<string | null> {
   } catch {
     return null;
   }
-  const file = join(dist, path);
-  const servable = file.startsWith(dist) && existsSync(file) && (await stat(file)).isFile();
-  return servable ? file : null;
+  const target = join(dist, path);
+  if (!(target.startsWith(dist) && existsSync(target))) return null;
+  const file = (await stat(target)).isDirectory() ? join(target, "index.html") : target;
+  if (!(existsSync(file) && (await stat(file)).isFile())) return null;
+  return file;
 }
 
 /** A static server over `dist/` that sends `cache-control: no-store` so the app never caches a dev build. */
@@ -127,7 +133,11 @@ export async function serve(repo: Repo, port: number): Promise<Serving> {
   const bound = typeof address === "object" && address !== null ? address.port : port;
   const url = `http://${lanAddress()}:${bound}/`;
   info(`serving ${repo.dist} on ${url}`);
-  for (const list of lists) info(`  ${list.name}: ${url}${list.target}/index.json`);
+  for (const list of lists) {
+    info(`  ${list.name}: ${url}${list.target}/index.json`);
+    if (existsSync(sitePath(repo, list.target)))
+      info(`  ${" ".repeat(list.name.length)}  ${url}${list.target}/site/`);
+  }
 
   return {
     url,

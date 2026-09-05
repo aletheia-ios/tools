@@ -33,10 +33,10 @@ export async function tempRepo(options: RepoOptions = {}): Promise<Repo> {
   return findRepo(root);
 }
 
-/** Scaffolds a package from the template and loads it. */
-export async function scaffold(repo: Repo, slug: string, name = slug): Promise<Package> {
-  await create(repo, slug, name);
-  return loadPackage(repo, slug);
+/** Scaffolds a package under a namespaced slug and loads it by its folder name. */
+export async function scaffold(repo: Repo, folder: string, name = folder): Promise<Package> {
+  await create(repo, `com.example.${folder}`, name);
+  return loadPackage(repo, folder);
 }
 
 /** Deletes every repository `tempRepo` made; call from `afterAll`. */

@@ -60,7 +60,7 @@ describe("build", () => {
     const built = await build(repo, packages);
 
     // assert
-    expect(built.map((one) => one.pkg.slug)).toEqual(["alpha", "beta"]);
+    expect(built.map((one) => one.pkg.folder)).toEqual(["alpha", "beta"]);
     expect(built.every((one) => existsSync(one.path))).toBe(true);
     expect(captured.out).toEqual(
       expect.arrayContaining([expect.stringMatching(/^alpha: main\.js \d+\.\d kB$/)]),
