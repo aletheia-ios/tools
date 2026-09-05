@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@aletheia-ios/sdk':
-        specifier: ^0.3.0
-        version: 0.3.0
+        specifier: ^0.4.0
+        version: 0.4.0
       esbuild:
         specifier: ^0.28.2
         version: 0.28.2
@@ -54,8 +54,8 @@ importers:
 
 packages:
 
-  '@aletheia-ios/sdk@0.3.0':
-    resolution: {integrity: sha512-1y7CBPoY1SU8743LVgwiyCWvjCOsMWfVuZ8hHYIy2ERDQdP+lmmNWyAv7o7WEVgJ+ae11ZbbsdZWub/+kaRc/Q==}
+  '@aletheia-ios/sdk@0.4.0':
+    resolution: {integrity: sha512-tvPtg1IaflgrsfDi8yb+QyL+O6C3uEzDi7pA9qrpeLYKzEW0xPzBX+geUg2gRxQfitgKU130MUayFoST4sH79A==}
     engines: {node: '>=22'}
 
   '@babel/helper-string-parser@7.29.7':
@@ -1322,7 +1322,7 @@ packages:
 
 snapshots:
 
-  '@aletheia-ios/sdk@0.3.0':
+  '@aletheia-ios/sdk@0.4.0':
     dependencies:
       zod: 4.5.4
 
