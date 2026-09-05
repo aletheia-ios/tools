@@ -14,6 +14,15 @@ type LiveSource = Source & Partial<Revalidating>;
 const PREVIEW = 5;
 
 /**
+ * The globals JavaScriptCore has that a bare Node vm context does not.
+ *
+ * Exactly these two and no more. The engine on the phone provides `atob` and `btoa` but not
+ * `TextEncoder`, `fetch` or `URL`, so adding these keeps `live` honest while leaving the rest
+ * absent, which is what makes a source that assumes them fail here rather than on a device.
+ */
+export const ENGINE_GLOBALS = { atob, btoa };
+
+/**
  * Evaluates the bundle in a node vm with a real network behind `__host.fetch`.
  *
  * The manifest's `hosts` allowlist is enforced the way the app enforces it, so a source
@@ -21,7 +30,7 @@ const PREVIEW = 5;
  * bundle `check` runs, so a selector cannot behave differently between the two.
  */
 function evaluate(bundle: string, hosts: string[]): LiveSource {
-  const context = vm.createContext({ console });
+  const context = vm.createContext({ console, ...ENGINE_GLOBALS });
   // the same bundle `check` runs under JavaScriptCore, so a selector behaves identically here
   vm.runInContext(readFileSync(join(OWN_ROOT, "dist", "html-bridge.js"), "utf8"), context);
   Object.assign(context, {
