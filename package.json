@@ -1,6 +1,6 @@
 {
   "name": "@aletheia-ios/tools",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "The aletheia CLI: build, check, pack, index and serve source packages",
   "license": "MIT",
   "repository": {
@@ -23,7 +23,8 @@
     "template"
   ],
   "scripts": {
-    "build": "tsdown && chmod +x dist/cli.js",
+    "build": "tsdown && pnpm build:html && chmod +x dist/cli.js",
+    "build:html": "esbuild src/html/inject.ts --bundle --format=iife --platform=neutral --target=es2022 --minify --outfile=dist/html-bridge.js",
     "typecheck": "tsc",
     "lint": "biome check .",
     "format": "biome format --write .",
@@ -35,6 +36,7 @@
     "@aletheia-ios/sdk": "^0.4.0",
     "esbuild": "^0.28.2",
     "fflate": "^0.8.3",
+    "node-html-parser": "^9.0.3",
     "qrcode-generator": "^2.0.4",
     "sharp": "^0.35.4",
     "zod": "^4.5.4"

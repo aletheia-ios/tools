@@ -53,6 +53,13 @@ phone runs, not Node. Verifies the four required exports, reports which optional
 and if `fixtures/smoke.json` is present runs search, details, chapters and content against
 canned responses. A Web API the bundle assumed and the phone lacks fails here, not on a device.
 
+Both `check` and `live` install a real `__host.html`, so a scraping source is exercised rather
+than stubbed. It is one pure-JavaScript bundle compiled into the harness, because `jsc` is a
+separate process and cannot call back into Node, and the same bundle is used by `live`, so the
+two commands can never disagree about what a selector matches. The app's own bridge is SwiftSoup;
+both follow the same CSS dialect, but they are different engines and will not agree on every
+exotic selector.
+
 **pack** - rasterises whichever of `icon.svg`, `icon.png`, `icon.jpg` is checked in (prefer
 svg > png > jpg) to a 512x512 `icon.png`, then zips the five files with fixed timestamps. The
 same content always produces the same bytes; the app treats one package published by two lists
@@ -84,7 +91,9 @@ today. Never part of `check`.
 
 ## Fixtures
 
-`fixtures/smoke.json` is an array of `{ "match": "<substring of a URL>", "body": <json> }`.
+`fixtures/smoke.json` is an array of `{ "match": "<substring of a URL>", "body": <json or html> }`.
+A string body is served as-is, which is what a scraping source needs; anything else is serialised
+as JSON.
 `check` answers each `__host.fetch` with the first fixture whose `match` appears in the URL,
 and calls `search("smoke")`, `details("series")`, `chapters("series")`,
 `content("series", "chapter")` in that order. Capture real responses from the site and trim

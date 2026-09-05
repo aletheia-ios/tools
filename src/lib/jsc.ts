@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { OWN_ROOT } from "@/context";
 
 /**
  * The shell inside `JavaScriptCore.framework` on macOS.
@@ -24,8 +25,22 @@ export interface Fixture {
 }
 
 /**
- * The stand-in host the bundle sees: a `__host.fetch` answered from fixtures, no html
+ * The html bridge, compiled to pure JavaScript at build time.
+ *
+ * jsc is a separate process, so tools cannot answer a parse call from Node. The parser is
+ * bundled into the script instead, which is also why `check` and `live` cannot disagree
+ * about what a selector matches: they run the same code.
+ */
+function htmlBridge(): string {
+  return readFileSync(join(OWN_ROOT, "dist", "html-bridge.js"), "utf8");
+}
+
+/**
+ * The stand-in host the bundle sees: a `__host.fetch` answered from fixtures, the real html
  * bridge, and a `console` that goes to jsc's `print`.
+ *
+ * A fixture body may be a string, which is served as-is for a source that parses HTML, or
+ * anything else, which is serialised as JSON.
  */
 const HARNESS = `
   var __calls = [];
@@ -34,9 +49,10 @@ const HARNESS = `
       __calls.push(request.url);
       var fixture = __fixtures.find(function (f) { return request.url.indexOf(f.match) !== -1; });
       if (!fixture) return Promise.reject(new Error("no fixture for " + request.url));
-      return Promise.resolve({ status: 200, headers: {}, url: request.url, text: JSON.stringify(fixture.body) });
+      var body = typeof fixture.body === "string" ? fixture.body : JSON.stringify(fixture.body);
+      return Promise.resolve({ status: 200, headers: {}, url: request.url, text: body });
     },
-    html: {},
+    html: __html,
   };
   var console = { log: print, warn: print, error: print };
 `;
@@ -91,7 +107,7 @@ function run<T>(bundle: string, fixtures: Fixture[], script: string): Run<T> {
   const file = join(mkdtempSync(join(tmpdir(), "aletheia-jsc-")), "run.js");
   writeFileSync(
     file,
-    `${HARNESS}\nvar __fixtures = ${JSON.stringify(fixtures)};\n${bundle}\n${script}`,
+    `${htmlBridge()}\n${HARNESS}\nvar __fixtures = ${JSON.stringify(fixtures)};\n${bundle}\n${script}`,
   );
   const child = spawnSync(JSC, [file], { encoding: "utf8" });
   const output = `${child.stdout}${child.stderr}`;

@@ -1,8 +1,10 @@
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import vm from "node:vm";
 import type { Request, Response, Revalidating, Source } from "@aletheia-ios/sdk/types";
 import { buildOne } from "@/commands/build";
-import type { Package, Repo } from "@/context";
+import { OWN_ROOT, type Package, type Repo } from "@/context";
 import { CliError, info } from "@/lib/log";
 
 /** The exported source as `live` calls it: the contract plus revalidation when present. */
@@ -15,11 +17,14 @@ const PREVIEW = 5;
  * Evaluates the bundle in a node vm with a real network behind `__host.fetch`.
  *
  * The manifest's `hosts` allowlist is enforced the way the app enforces it, so a source
- * that reaches somewhere it did not declare fails here too. There is no html bridge.
+ * that reaches somewhere it did not declare fails here too. The html bridge is the same
+ * bundle `check` runs, so a selector cannot behave differently between the two.
  */
 function evaluate(bundle: string, hosts: string[]): LiveSource {
-  const context = vm.createContext({
-    console,
+  const context = vm.createContext({ console });
+  // the same bundle `check` runs under JavaScriptCore, so a selector behaves identically here
+  vm.runInContext(readFileSync(join(OWN_ROOT, "dist", "html-bridge.js"), "utf8"), context);
+  Object.assign(context, {
     __host: {
       async fetch(request: Request): Promise<Response> {
         const { host } = new URL(request.url);
@@ -38,7 +43,7 @@ function evaluate(bundle: string, hosts: string[]): LiveSource {
           text: await response.text(),
         };
       },
-      html: {},
+      html: context.__html,
     },
   });
   vm.runInContext(bundle, context);
