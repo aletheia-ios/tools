@@ -197,6 +197,9 @@ const SSH_REMOTE = /^(?:ssh:\/\/)?git@([^:/]+)[:/](.+)$/;
 /** The scheme, dropped for display since the page shows the address rather than the link. */
 const SCHEME = /^https:\/\//;
 
+/** A trailing slash on a base URL, which would double up against the target that follows it. */
+const TRAILING_SLASH = /\/+$/;
+
 /**
  * The repository this list is generated from, as a browsable URL.
  *
@@ -301,20 +304,25 @@ async function icons(repo: Repo, members: Package[]): Promise<[Package, string][
  * generated from the same `lists/` and `source.json` data as the index it advertises, so the
  * two cannot disagree.
  *
- * A list with no `url` is skipped with a note, since the deep link and QR have nothing to
- * point at until that target's zone exists.
+ * `base` addresses every list at `<base>/<target>/index.json`, which is what a deploy passes
+ * when it knows where it is publishing to and the repository does not: a fork's Pages site, a
+ * custom domain, a staging bucket. Without it each list's own `url` is used, and a list that
+ * has neither is skipped with a note, since the deep link and QR have nothing to point at.
  *
  * @throws `CliError` when a list names a package that does not exist or is not packed.
  */
-export async function site(repo: Repo, packages: Package[]): Promise<void> {
+export async function site(repo: Repo, packages: Package[], base?: string): Promise<void> {
   const bySlug = new Map(packages.map((pkg) => [pkg.slug, pkg]));
   const source = await repository(repo);
+  const root = base?.replace(TRAILING_SLASH, "");
   for (const list of await loadLists(repo)) {
     const missing = list.sources.filter((slug) => !bySlug.has(slug));
     if (missing.length > 0) {
       throw new CliError(missing.map((slug) => `list "${list.name}": no package "${slug}"`));
     }
-    if (list.url === undefined) {
+    const based = root !== undefined && root !== "";
+    const url = based ? `${root}/${list.target}/index.json` : list.url;
+    if (url === undefined) {
       info(`${list.target}: no url in the list, skipping the page`);
       continue;
     }
@@ -322,7 +330,7 @@ export async function site(repo: Repo, packages: Package[]): Promise<void> {
     const withIcons = await icons(repo, members);
     const out = sitePath(repo, list.target);
     await mkdir(out, { recursive: true });
-    await writeFile(join(out, "index.html"), page(list, list.url, withIcons, source));
+    await writeFile(join(out, "index.html"), page(list, url, withIcons, source));
     info(`${list.target}/site/index.html: ${members.length} source(s)`);
   }
 }

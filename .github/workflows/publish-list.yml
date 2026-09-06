@@ -1,0 +1,160 @@
+name: publish list
+
+# A source repository calls this to build its packages and publish them, without keeping a copy
+# of the steps. GitHub Pages is the default host and needs no account anywhere:
+#
+#   jobs:
+#     publish:
+#       uses: aletheia-ios/tools/.github/workflows/publish-list.yml@v0.5.0
+#       permissions: { contents: read, pages: write, id-token: write }
+#
+# Pages serves a public repository only. A private one, or anywhere else, sets `bucket` and the
+# two Cloudflare secrets instead, and the R2 job runs in place of the Pages job.
+#
+# The caller's own devDependency provides the cli this runs, so it needs @aletheia-ios/tools
+# 0.5.0 or newer for `site --base`.
+
+on:
+  workflow_call:
+    inputs:
+      domain:
+        description: The custom domain serving the list, without a scheme. Pages gets a CNAME.
+        type: string
+        default: ""
+      base:
+        description: >
+          Where the deployed index will be reachable, overriding each list's own url. Defaults to
+          the custom domain, then to this repository's Pages address.
+        type: string
+        default: ""
+      bucket:
+        description: An R2 bucket to publish to instead of Pages. Needs the Cloudflare secrets.
+        type: string
+        default: ""
+      targets:
+        description: >
+          A JSON array of list targets to publish to R2, one job each, each running in a GitHub
+          environment of the same name so a zone's bucket and token stay its own.
+        type: string
+        default: '["main"]'
+    secrets:
+      CLOUDFLARE_API_TOKEN:
+        required: false
+      CLOUDFLARE_ACCOUNT_ID:
+        required: false
+
+jobs:
+  build:
+    # jsc ships with macOS, and `check` runs the fixtures under it rather than skipping them
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # index dates each package by its folder's last commit
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - name: work out where this will be served from
+        id: where
+        run: |
+          if [ -n "${{ inputs.base }}" ]; then
+            echo "base=${{ inputs.base }}" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ inputs.domain }}" ]; then
+            echo "base=https://${{ inputs.domain }}" >> "$GITHUB_OUTPUT"
+          elif [ -z "${{ inputs.bucket }}" ]; then
+            # the Pages address for this repository, which is the default host
+            echo "base=https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}" >> "$GITHUB_OUTPUT"
+          else
+            # publishing to a bucket with no domain given: the lists' own urls stand
+            echo "base=" >> "$GITHUB_OUTPUT"
+          fi
+      # `pack` collides with a built-in pnpm command, so these need an explicit `run`
+      - run: pnpm run pack && pnpm run index
+      - run: pnpm exec aletheia site --base "${{ steps.where.outputs.base }}"
+      - name: point the custom domain at the deployed tree
+        if: inputs.domain != '' && inputs.bucket == ''
+        run: echo "${{ inputs.domain }}" > dist/CNAME
+      - uses: actions/upload-artifact@v6
+        with:
+          name: dist
+          path: dist
+
+  # the whole tree goes up, so every list this repository holds is published together
+  pages:
+    if: inputs.bucket == ''
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: dist
+          path: dist
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+      - uses: actions/deploy-pages@v4
+        id: deploy
+
+  # one job per target instead, each in its own environment holding only that zone's bucket and
+  # token; the upload copies the target's index plus only the files its manifest names, so a
+  # package never lands on another zone's bucket
+  r2:
+    if: inputs.bucket != ''
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: ${{ fromJSON(inputs.targets) }}
+    environment: ${{ matrix.target }}
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: dist
+          path: dist
+      - name: select this target's files
+        run: |
+          mkdir -p upload/${{ matrix.target }} upload/packages upload/icons
+          cp dist/${{ matrix.target }}/index.json upload/${{ matrix.target }}/
+          for file in $(jq -r '.packages[]' dist/${{ matrix.target }}/manifest.json); do
+            cp "dist/packages/$file" upload/packages/
+          done
+          for file in $(jq -r '.icons[]' dist/${{ matrix.target }}/manifest.json); do
+            cp "dist/icons/$file" upload/icons/
+          done
+      - name: upload packages and the index to r2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # an environment naming its own bucket wins, so zones can be split across buckets
+          # later without the caller changing; otherwise every target shares the one passed in
+          BUCKET: ${{ vars.R2_BUCKET || inputs.bucket }}
+        run: |
+          cd upload
+          find . -type f | while read -r file; do
+            npx --yes wrangler r2 object put "$BUCKET/${file#./}" --file "$file" --remote
+          done
+
+      # the page is one self-contained file, so it goes to a single extensionless key and needs
+      # its content type stated; r2 would otherwise serve it as a download
+      - name: upload the page to r2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BUCKET: ${{ vars.R2_BUCKET || inputs.bucket }}
+        run: |
+          npx --yes wrangler r2 object put \
+            "$BUCKET/sources/${{ matrix.target }}" \
+            --file "dist/${{ matrix.target }}/site/index.html" \
+            --content-type "text/html; charset=utf-8" --remote

@@ -18,7 +18,8 @@ const USAGE = `usage: aletheia <command> [options]
   check [--only <slug>]     typecheck, build, verify exports and run fixtures under JavaScriptCore
   pack  [--only <slug>]     build, rasterise the icon and zip to dist/packages/<slug>-v<version>.althsource
   index                     write dist/<target>/index.json for every list in lists/
-  site                      write dist/<target>/site/ - the page a reader adds the list from
+  site  [--base <url>]      write dist/<target>/site/ - the page a reader adds the list from,
+                            addressing each list at <base>/<target>/index.json when given
   serve [--port <n>]        pack, index, serve dist/ on the lan and rebuild on change
   new <slug> [--name <n>]   scaffold packages/<slug> from the template
   live <slug> <series|-> [query]
@@ -46,6 +47,7 @@ async function main(argv: string[]): Promise<void> {
       only: { type: "string", multiple: true },
       port: { type: "string" },
       name: { type: "string" },
+      base: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -70,7 +72,7 @@ async function main(argv: string[]): Promise<void> {
       await indexes(repo, await loadPackages(repo));
       return;
     case "site":
-      await site(repo, await loadPackages(repo));
+      await site(repo, await loadPackages(repo), values.base);
       return;
     case "serve":
       await serve(repo, Number.parseInt(values.port ?? DEFAULT_PORT, 10));

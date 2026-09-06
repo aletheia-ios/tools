@@ -140,6 +140,39 @@ describe("site", () => {
     expect(html).toContain('href="https://github.com/someone/sources/issues"');
   });
 
+  it("addresses each list under a base when the deploy passes one", async () => {
+    // arrange
+    const repo = await tempRepo({ lists: { main: LIST } });
+    capture();
+    const pkg = await scaffold(repo, "demo");
+    await pack(repo, [pkg]);
+
+    // act
+    await site(repo, [pkg], "https://someone.github.io/sources/");
+    const html = await readFile(join(sitePath(repo, "main"), "index.html"), "utf8");
+
+    // assert
+    const expected = "https://someone.github.io/sources/main/index.json";
+    expect(html).toContain(`data-copy="${expected}"`);
+    expect(html).toContain(`href="aletheia://add-list?url=${encodeURIComponent(expected)}"`);
+    expect(html).not.toContain(URL);
+  });
+
+  it("writes a page for a list with no url once a base supplies one", async () => {
+    // arrange
+    const repo = await tempRepo({ lists: { main: { ...LIST, url: undefined } } });
+    capture();
+    const pkg = await scaffold(repo, "demo");
+    await pack(repo, [pkg]);
+
+    // act
+    await site(repo, [pkg], "https://someone.github.io/sources");
+    const html = await readFile(join(sitePath(repo, "main"), "index.html"), "utf8");
+
+    // assert
+    expect(html).toContain("https://someone.github.io/sources/main/index.json");
+  });
+
   it("puts an age gate in front of an adult list and hides the sources", async () => {
     // arrange
     const repo = await tempRepo({ lists: { adult: { ...LIST, target: "adult", adult: true } } });
