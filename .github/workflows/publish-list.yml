@@ -37,6 +37,13 @@ on:
           environment of the same name so a zone's bucket and token stay its own.
         type: string
         default: '["main"]'
+      environment:
+        description: >
+          One environment for every target, for zones that share a bucket and a token. Leave it
+          unset to give each target the environment named after it, which is what keeps a zone
+          isolated once it has credentials of its own.
+        type: string
+        default: ""
     secrets:
       CLOUDFLARE_API_TOKEN:
         required: false
@@ -100,7 +107,10 @@ jobs:
         with:
           name: dist
           path: dist
+      # turns Pages on for a repository that has never used it, so a fork needs no settings visit
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v4
         with:
           path: dist
@@ -117,7 +127,7 @@ jobs:
     strategy:
       matrix:
         target: ${{ fromJSON(inputs.targets) }}
-    environment: ${{ matrix.target }}
+    environment: ${{ inputs.environment || matrix.target }}
     steps:
       - uses: actions/download-artifact@v7
         with:
