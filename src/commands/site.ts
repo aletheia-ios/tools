@@ -281,6 +281,46 @@ function page(
 }
 
 /**
+ * The page at the root of the deployed tree.
+ *
+ * A host serves the tree from its root, and nothing lives there: the pages are one directory
+ * down, per list. Without this, the address someone is most likely to try is a 404. One list
+ * forwards straight to it, since a menu of one is not a choice.
+ */
+function landing(lists: List[]): string {
+  const one = lists.length === 1 ? (lists[0] as List) : null;
+  const forward =
+    one === null ? "" : `\n<meta http-equiv="refresh" content="0; url=${one.target}/site/">`;
+  const links = lists
+    .map(
+      (list) => `<li><a href="${escapeHTML(list.target)}/site/">${escapeHTML(list.name)}</a></li>`,
+    )
+    .join("\n      ");
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aletheia lists</title>${forward}
+<style>${STYLE}
+ul { list-style: none; padding: 0; margin: 0; }
+li { margin: 0 0 .6rem; }
+</style>
+</head>
+<body>
+  <main>
+    <h1>Lists</h1>
+    <p class="lede">Each of these can be added to Aletheia.</p>
+    <ul>
+      ${links}
+    </ul>
+  </main>
+</body>
+</html>
+`;
+}
+
+/**
  * Reads each source's packed icon as base64, to be inlined in the page.
  *
  * @throws `CliError` when a package has not been packed, since the icon is a pack output.
@@ -315,6 +355,7 @@ export async function site(repo: Repo, packages: Package[], base?: string): Prom
   const bySlug = new Map(packages.map((pkg) => [pkg.slug, pkg]));
   const source = await repository(repo);
   const root = base?.replace(TRAILING_SLASH, "");
+  const written: List[] = [];
   for (const list of await loadLists(repo)) {
     const missing = list.sources.filter((slug) => !bySlug.has(slug));
     if (missing.length > 0) {
@@ -331,6 +372,11 @@ export async function site(repo: Repo, packages: Package[], base?: string): Prom
     const out = sitePath(repo, list.target);
     await mkdir(out, { recursive: true });
     await writeFile(join(out, "index.html"), page(list, url, withIcons, source));
+    written.push(list);
     info(`${list.target}/site/index.html: ${members.length} source(s)`);
   }
+
+  if (written.length === 0) return;
+  await writeFile(join(repo.dist, "index.html"), landing(written));
+  info(`index.html: ${written.length} list(s)`);
 }

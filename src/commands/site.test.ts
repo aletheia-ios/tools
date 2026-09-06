@@ -173,6 +173,42 @@ describe("site", () => {
     expect(html).toContain("https://someone.github.io/sources/main/index.json");
   });
 
+  it("writes a root page, forwarding when there is only one list", async () => {
+    // arrange
+    const repo = await tempRepo({ lists: { main: LIST } });
+    capture();
+    const pkg = await scaffold(repo, "demo");
+    await pack(repo, [pkg]);
+
+    // act
+    await site(repo, [pkg]);
+    const html = await readFile(join(repo.dist, "index.html"), "utf8");
+
+    // assert
+    expect(html).toContain('content="0; url=main/site/"');
+    expect(html).toContain('href="main/site/"');
+  });
+
+  it("lists every page at the root when there is more than one", async () => {
+    // arrange
+    const repo = await tempRepo({
+      lists: { main: LIST, adult: { ...LIST, name: "Adult", target: "adult", adult: true } },
+    });
+    capture();
+    const pkg = await scaffold(repo, "demo");
+    await pack(repo, [pkg]);
+
+    // act
+    await site(repo, [pkg]);
+    const html = await readFile(join(repo.dist, "index.html"), "utf8");
+
+    // assert
+    expect(html).toContain('href="main/site/"');
+    expect(html).toContain('href="adult/site/"');
+    // a menu of two is a choice, so nothing is picked for the reader
+    expect(html).not.toContain("http-equiv");
+  });
+
   it("puts an age gate in front of an adult list and hides the sources", async () => {
     // arrange
     const repo = await tempRepo({ lists: { adult: { ...LIST, target: "adult", adult: true } } });
