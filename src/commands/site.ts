@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { type List, loadLists } from "@/commands/indexes";
 import { iconPath, type Package, type Repo } from "@/context";
 import { escapeHTML, qrSVG } from "@/lib/html";
@@ -14,12 +16,12 @@ export function sitePath(repo: Repo, target: string): string {
 const STYLE = `
 :root {
   --bg: #fbfbfd; --fg: #16161a; --muted: #6b6b76; --line: #e4e4ea;
-  --card: #ffffff; --accent: #4c5cff; --accent-fg: #ffffff;
+  --card: #ffffff; --accent: #4c5cff; --accent-fg: #ffffff; --warn: #b3341f;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0f0f12; --fg: #f2f2f5; --muted: #9a9aa5; --line: #26262e;
-    --card: #17171c; --accent: #7c88ff; --accent-fg: #0f0f12;
+    --card: #17171c; --accent: #7c88ff; --accent-fg: #0f0f12; --warn: #ff8a73;
   }
 }
 * { box-sizing: border-box; }
@@ -48,21 +50,31 @@ h1 { font-size: 1.9rem; margin: 0 0 .35rem; letter-spacing: -.02em; }
 .qr rect:first-of-type { fill: #fff; }
 h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 .85rem; }
 .source {
-  display: flex; align-items: flex-start; gap: 1rem; padding: 1rem; margin-bottom: .75rem;
+  padding: 1rem; margin-bottom: .75rem;
   background: var(--card); border: 1px solid var(--line); border-radius: .75rem;
 }
-.source img { width: 3rem; height: 3rem; border-radius: .55rem; flex: none; }
-.source div { min-width: 0; }
-.source h3 { margin: 0 0 .3rem; font-size: 1rem; line-height: 1.3; }
+/* wraps so a long name beside four language names drops the badges to their own line on a phone */
+.head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .7rem; margin-bottom: .55rem; }
+.source img { width: 2.5rem; height: 2.5rem; border-radius: .55rem; flex: none; }
+.source h3 { margin: 0; font-size: 1rem; line-height: 1.3; min-width: 0; flex: 1 1 auto; }
+.badges { display: flex; align-items: center; gap: .4rem; flex: none; margin-left: auto; font-size: .75rem; color: var(--muted); }
+.tag.adult { color: var(--warn); border-color: var(--warn); }
+.langs { font-size: .75rem; color: var(--muted); margin-right: .2rem; }
 .source p { margin: 0 0 .7rem; color: var(--muted); font-size: .9rem; }
 .meta { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; font-size: .75rem; color: var(--muted); }
 .tag {
   display: inline-block; padding: .2rem .55rem; border: 1px solid var(--line);
   border-radius: 100px; line-height: 1.4;
 }
+/* the default link colours are a blue that fights the page and a visited purple that reads as
+   a different kind of link; the underline carries the affordance instead */
+a { color: var(--fg); text-decoration: underline; text-decoration-thickness: 1px;
+  text-underline-offset: .18em; text-decoration-color: var(--line); }
+a:hover { color: var(--accent); text-decoration-color: var(--accent); }
 a.tag { color: inherit; text-decoration: none; }
 a.tag:hover { color: var(--fg); border-color: var(--accent); }
-.reach { margin: .75rem 0 .4rem; font-size: .7rem; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+/* outranks .source p, which would otherwise win on specificity and render this as body text */
+.source .reach { margin: .8rem 0 .35rem; font-size: .68rem; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); opacity: .75; }
 footer { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
 footer p { margin: 0 0 .7rem; max-width: 38rem; }
 footer p:last-child { margin-bottom: 0; }
@@ -110,11 +122,33 @@ function reach(entry: string): string {
   return `*.${entry}`;
 }
 
+/** What each code the app renders is called. */
+const LANGUAGES: Record<string, string> = {
+  en: "English",
+  ja: "Japanese",
+  ko: "Korean",
+  zh: "Chinese",
+};
+
+/**
+ * The languages a source carries, named in full.
+ *
+ * Deliberately neither flags nor codes. Windows and Android ship no flag glyphs, so a flag
+ * renders there as the bare letter pair it is built from, and a language is not a country in the
+ * first place; a code needs a label to say what it even is, where a name does not.
+ */
+function languages(codes: readonly string[]): string {
+  if (codes.length === 0) return "";
+  const names = codes.map((code) => LANGUAGES[code] ?? code.toUpperCase()).join(", ");
+  return `<span class="langs">${escapeHTML(names)}</span>`;
+}
+
 /** One source's row: icon, name, description, and every host it is allowed to contact. */
 function card(pkg: Package, icon: string): string {
   const { manifest } = pkg;
-  const languages = manifest.languages.map((code) => code.toUpperCase()).join(", ");
-  const rating = manifest.contentRating === "adult" ? "18+" : "Mixed ratings";
+  // only an adult source is marked; a mixed one is the norm and saying so on every other card
+  // spends a badge on nothing
+  const rating = manifest.contentRating === "adult" ? '<span class="tag adult">18+</span>' : "";
   const hosts =
     manifest.hosts.length === 0
       ? '<span class="tag">contacts nothing</span>'
@@ -122,19 +156,19 @@ function card(pkg: Package, icon: string): string {
           .map((entry) => `<span class="tag">${escapeHTML(reach(entry))}</span>`)
           .join("\n            ");
   return `<article class="source">
-        <img src="data:image/png;base64,${icon}" alt="" width="48" height="48">
-        <div>
+        <div class="head">
+          <img src="data:image/png;base64,${icon}" alt="" width="40" height="40">
           <h3>${escapeHTML(manifest.name)}</h3>
-          <p>${escapeHTML(manifest.description)}</p>
-          <div class="meta">
+          <div class="badges">
+            ${languages(manifest.languages)}
+            ${rating}
             <span class="tag">v${escapeHTML(manifest.version)}</span>
-            <span class="tag">${escapeHTML(languages)}</span>
-            <span class="tag">${rating}</span>
           </div>
-          <p class="reach">Contacts</p>
-          <div class="meta">
-            ${hosts}
-          </div>
+        </div>
+        <p>${escapeHTML(manifest.description)}</p>
+        <p class="reach">Contacts</p>
+        <div class="meta">
+          ${hosts}
         </div>
       </article>`;
 }
@@ -154,19 +188,66 @@ function actions(url: string): string {
     </div>`;
 }
 
+/** The suffix a remote carries and a browser does not want. */
+const GIT_SUFFIX = /\.git$/;
+
+/** An scp-style remote, `git@host:owner/repo`, which is not a URL and cannot be parsed as one. */
+const SSH_REMOTE = /^(?:ssh:\/\/)?git@([^:/]+)[:/](.+)$/;
+
+/** The scheme, dropped for display since the page shows the address rather than the link. */
+const SCHEME = /^https:\/\//;
+
+/**
+ * The repository this list is generated from, as a browsable URL.
+ *
+ * Read from the checkout rather than configured, so the page cannot advertise a repository the
+ * packages did not come from. Null when there is no git remote to read, which is the case in a
+ * bare directory and in a tarball, and the page then simply omits the line.
+ */
+async function repository(repo: Repo): Promise<string | null> {
+  try {
+    const { stdout } = await promisify(execFile)("git", ["remote", "get-url", "origin"], {
+      cwd: repo.root,
+    });
+    const origin = stdout.trim().replace(GIT_SUFFIX, "");
+    if (origin === "") return null;
+    const ssh = SSH_REMOTE.exec(origin);
+    const url = ssh === null ? origin : `https://${ssh[1]}/${ssh[2]}`;
+    return SCHEME.test(url) ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The notice every published list carries. */
-function notice(): string {
+function notice(source: string | null): string {
+  const code =
+    source === null
+      ? ""
+      : `\n      <p>Source code at
+      <a href="${escapeHTML(source)}">${escapeHTML(source.replace(SCHEME, ""))}</a>.</p>`;
+  // an address beats "get in touch", and the repository already has the one channel this list
+  // has; with no remote to name there is nothing specific to point a request at
+  const removal =
+    source === null
+      ? "To have a source removed, get in touch."
+      : `To have a source removed, open an issue at
+      <a href="${escapeHTML(source)}/issues">${escapeHTML(source.replace(SCHEME, ""))}/issues</a>.`;
   return `<footer>
-      <p>This list is not an official part of Aletheia, and it is not connected to, endorsed by,
-      or approved by any of the sites named above. Their names and logos belong to them.</p>
-      <p>No comics, images or accounts are stored or shared here. An entry only tells the app
-      where to go looking, and every site each one may contact is listed above.</p>
-      <p>If you would like something taken off this list, get in touch and it will be removed.</p>
+      <p>This list has no affiliation with the sites it points to. Their names and logos belong
+      to them.</p>
+      <p>Nothing is hosted here. A source only tells the app where to look.</p>${code}
+      <p>${removal}</p>
     </footer>`;
 }
 
 /** The whole page for one list, with each source's icon already base64 encoded. */
-function page(list: List, url: string, members: [Package, string][]): string {
+function page(
+  list: List,
+  url: string,
+  members: [Package, string][],
+  source: string | null,
+): string {
   const heading = escapeHTML(list.name);
   const count = members.length === 1 ? "1 source" : `${members.length} sources`;
   return `<!doctype html>
@@ -180,15 +261,15 @@ function page(list: List, url: string, members: [Package, string][]): string {
 <body>
   <main>
     <h1>${heading}</h1>
-    <p class="lede">Opens in Aletheia with this address filled in. You confirm before anything
-    is added, and the app keeps the list up to date afterwards.</p>
+    <p class="lede">Adding this list to Aletheia includes the following below as installable
+    sources.</p>
     ${list.adult === true ? gate() : ""}
     <div id="list"${list.adult === true ? ' style="display:none"' : ""}>
       ${actions(url)}
       <h2>${count}</h2>
       ${members.map(([pkg, icon]) => card(pkg, icon)).join("\n      ")}
     </div>
-    ${notice()}
+    ${notice(source)}
   </main>
 <script>${SCRIPT}</script>
 </body>
@@ -227,6 +308,7 @@ async function icons(repo: Repo, members: Package[]): Promise<[Package, string][
  */
 export async function site(repo: Repo, packages: Package[]): Promise<void> {
   const bySlug = new Map(packages.map((pkg) => [pkg.slug, pkg]));
+  const source = await repository(repo);
   for (const list of await loadLists(repo)) {
     const missing = list.sources.filter((slug) => !bySlug.has(slug));
     if (missing.length > 0) {
@@ -240,7 +322,7 @@ export async function site(repo: Repo, packages: Package[]): Promise<void> {
     const withIcons = await icons(repo, members);
     const out = sitePath(repo, list.target);
     await mkdir(out, { recursive: true });
-    await writeFile(join(out, "index.html"), page(list, list.url, withIcons));
+    await writeFile(join(out, "index.html"), page(list, list.url, withIcons, source));
     info(`${list.target}/site/index.html: ${members.length} source(s)`);
   }
 }

@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { capture, cleanupRepos, scaffold, tempRepo } from "@test/repo";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { pack } from "./pack";
@@ -107,9 +109,35 @@ describe("site", () => {
     const html = await readFile(join(sitePath(repo, "main"), "index.html"), "utf8");
 
     // assert
-    expect(html).toContain("not an official part of Aletheia");
-    expect(html).toContain("not connected to, endorsed by,");
-    expect(html).toContain("it will be removed");
+    expect(html).toContain("no affiliation with the sites it points to");
+    expect(html).toContain("Nothing is hosted here");
+    expect(html).toContain("To have a source removed, get in touch");
+    // a temp directory has no git remote, so the repository line has nothing to point at
+    expect(html).not.toContain("Source code at");
+  });
+
+  it("links the repository the packages came from, taking it from the git remote", async () => {
+    // arrange
+    const repo = await tempRepo({ lists: { main: LIST } });
+    capture();
+    const pkg = await scaffold(repo, "demo");
+    await pack(repo, [pkg]);
+    const git = promisify(execFile);
+    await git("git", ["init"], { cwd: repo.root });
+    // the scp-style form, which is not a URL and has to be rewritten rather than parsed
+    await git("git", ["remote", "add", "origin", "git@github.com:someone/sources.git"], {
+      cwd: repo.root,
+    });
+
+    // act
+    await site(repo, [pkg]);
+    const html = await readFile(join(sitePath(repo, "main"), "index.html"), "utf8");
+
+    // assert
+    expect(html).toContain('href="https://github.com/someone/sources"');
+    expect(html).toContain(">github.com/someone/sources</a>");
+    expect(html).toContain("Source code at");
+    expect(html).toContain('href="https://github.com/someone/sources/issues"');
   });
 
   it("puts an age gate in front of an adult list and hides the sources", async () => {
@@ -185,8 +213,9 @@ describe("site", () => {
 
     // assert
     expect(html).toContain("2 sources");
-    expect(html).toContain("18+");
-    expect(html).toContain("Mixed ratings");
+    // only the adult one is marked, so the mark appears once across two cards
+    expect(html.split("18+").length - 1).toBe(1);
+    expect(html).not.toContain("Mixed ratings");
     expect(alpha.manifest.contentRating).toBe("mixed");
   });
 
