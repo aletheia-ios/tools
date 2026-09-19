@@ -94,7 +94,10 @@ describe("indexes", () => {
     capture();
     const pkg = await scaffold(repo, "demo");
     await writeFile(join(repo.root, ".gitignore"), "dist/\n");
-    const env = { ...process.env };
+    // a pre-commit hook exports GIT_INDEX_FILE, which would point this repo's add at the real one
+    const env = Object.fromEntries(
+      Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
+    );
     env.GIT_AUTHOR_DATE = "2024-05-06T07:08:09Z";
     env.GIT_COMMITTER_DATE = "2024-05-06T07:08:09Z";
     const git = (...args: string[]) =>
