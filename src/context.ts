@@ -217,3 +217,15 @@ export function packagePath(repo: Repo, pkg: Package): string {
 export function iconPath(repo: Repo, slug: string): string {
   return join(repo.dist, "icons", `${slug}.png`);
 }
+
+/**
+ * The manifest `serve` publishes in place of a package's own.
+ *
+ * The slug gains a `.debug` segment and the name a ` (Dev)` suffix, so a dev build installs
+ * beside the published package instead of conflicting with it. `replaces` is dropped because
+ * a replacement inherits the old slug's library rows, and a dev build must never take those.
+ */
+export function debugManifest(manifest: Manifest): Manifest {
+  const { replaces: _, ...rest } = manifest;
+  return { ...rest, slug: `${manifest.slug}.debug`, name: `${manifest.name} (Dev)` };
+}

@@ -31,14 +31,15 @@ describe("serve", () => {
     const icon = await fetch(local(serving, "/icons/com.example.demo.png"));
     const archive = await fetch(local(serving, "/packages/com.example.demo-v0.1.0.althsource"));
     const other = await fetch(local(serving, "/notes.txt"));
-    const body = (await index.json()) as { sources: Array<{ slug: string }> };
+    const body = (await index.json()) as { sources: Array<{ slug: string; name: string }> };
     await serving.close();
 
     // assert
     expect(index.status).toBe(200);
     expect(index.headers.get("content-type")).toBe("application/json");
     expect(index.headers.get("cache-control")).toBe("no-store");
-    expect(body.sources[0]?.slug).toBe("com.example.demo");
+    expect(body.sources[0]?.slug).toBe("com.example.demo.debug");
+    expect(body.sources[0]?.name).toMatch(/ \(Dev\)$/);
     expect(icon.headers.get("content-type")).toBe("image/png");
     expect(archive.headers.get("content-type")).toBe("application/zip");
     expect(other.headers.get("content-type")).toBe("application/octet-stream");

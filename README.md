@@ -80,7 +80,8 @@ fails closed without script.
 
 **serve** - runs pack and index, serves `dist/` on the LAN with `cache-control: no-store`, and
 reruns both when anything under `packages/` or `lists/` changes. Point the app's developer list
-at the printed URL.
+at the printed URL. Every package is served as `<slug>.debug` named `<name> (Dev)`, without
+`replaces`, so a dev build installs beside the published one instead of conflicting with it.
 
 **new** - copies the template: an offline source with `hosts: []` that passes `check` as-is,
 so the first thing you see from a new package is green.

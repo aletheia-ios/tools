@@ -41,13 +41,14 @@ export interface Serving {
  * Packs and indexes the whole repository, reporting failures instead of throwing.
  *
  * A broken package while serving is a message on stderr, not a dead server; the previous
- * build stays served until the next successful one.
+ * build stays served until the next successful one. Packs and indexes in debug mode, so
+ * what the app installs from here never collides with the published packages.
  */
 async function rebuild(repo: Repo): Promise<void> {
   try {
     const packages = await loadPackages(repo);
-    await pack(repo, packages);
-    await indexes(repo, packages);
+    await pack(repo, packages, true);
+    await indexes(repo, packages, true);
     await site(repo, packages);
   } catch (error) {
     report(error);

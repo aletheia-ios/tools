@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { build } from "@/commands/build";
-import { iconPath, type Package, packagePath, type Repo } from "@/context";
+import { debugManifest, iconPath, type Package, packagePath, type Repo } from "@/context";
 import { findIcon, rasterise } from "@/lib/icon";
 import { info, kb } from "@/lib/log";
 import { deterministicZip } from "@/lib/zip";
@@ -28,14 +28,19 @@ export interface Packed {
  * package has one, `auth.json`. The zip is deterministic, so the same content always gives
  * the same bytes and sha256. The icon is also written on its own to `dist/icons/` for the
  * index to link.
+ *
+ * With `debug`, `source.json` is replaced by {@link debugManifest}; otherwise it is copied
+ * byte for byte.
  */
-export async function pack(repo: Repo, packages: Package[]): Promise<Packed[]> {
+export async function pack(repo: Repo, packages: Package[], debug = false): Promise<Packed[]> {
   const built = await build(repo, packages);
   const packed: Packed[] = [];
   for (const { pkg, path } of built) {
     const icon = await rasterise(findIcon(pkg.dir, pkg.folder), pkg.folder);
     const files: Record<string, Uint8Array> = {
-      "source.json": await readFile(join(pkg.dir, "source.json")),
+      "source.json": debug
+        ? new TextEncoder().encode(`${JSON.stringify(debugManifest(pkg.manifest), null, 2)}\n`)
+        : await readFile(join(pkg.dir, "source.json")),
       "filters.json": await readFile(join(pkg.dir, "filters.json")),
       "icon.png": icon,
       "main.js": await readFile(path),

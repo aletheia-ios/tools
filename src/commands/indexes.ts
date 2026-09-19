@@ -6,7 +6,14 @@ import { basename, join, relative } from "node:path";
 import { Index } from "@aletheia-ios/sdk/schemas";
 import type { IndexEntry } from "@aletheia-ios/sdk/types";
 import { z } from "zod";
-import { BUILT_WITH, iconPath, type Package, packagePath, type Repo } from "@/context";
+import {
+  BUILT_WITH,
+  debugManifest,
+  iconPath,
+  type Package,
+  packagePath,
+  type Repo,
+} from "@/context";
 import { CliError, info } from "@/lib/log";
 
 /**
@@ -75,22 +82,28 @@ function updatedDate(pkg: Package): string {
  *
  * @throws `CliError` when the package has not been packed.
  */
-async function entry(repo: Repo, pkg: Package, target: string): Promise<IndexEntry> {
+async function entry(
+  repo: Repo,
+  pkg: Package,
+  target: string,
+  debug: boolean,
+): Promise<IndexEntry> {
   const path = packagePath(repo, pkg);
   if (!existsSync(path)) throw new CliError([`${pkg.folder}: not packed - run pack first`]);
   const bytes = await readFile(path);
   const base = join(repo.dist, target);
+  const manifest = debug ? debugManifest(pkg.manifest) : pkg.manifest;
   return {
-    slug: pkg.slug,
+    slug: manifest.slug,
     // advisory here so a list can explain a slug that vanished from it; the app applies the
     // namespace rule against the manifest's copy, never this one
-    ...(pkg.manifest.replaces === undefined ? {} : { replaces: pkg.manifest.replaces }),
-    name: pkg.manifest.name,
-    version: pkg.manifest.version,
-    minAppVersion: pkg.manifest.minAppVersion,
-    contractVersion: pkg.manifest.contractVersion,
-    contentRating: pkg.manifest.contentRating,
-    languages: pkg.manifest.languages,
+    ...(manifest.replaces === undefined ? {} : { replaces: manifest.replaces }),
+    name: manifest.name,
+    version: manifest.version,
+    minAppVersion: manifest.minAppVersion,
+    contractVersion: manifest.contractVersion,
+    contentRating: manifest.contentRating,
+    languages: manifest.languages,
     size: (await stat(path)).size,
     sha256: createHash("sha256").update(bytes).digest("hex"),
     updatedDate: updatedDate(pkg),
@@ -107,9 +120,12 @@ async function entry(repo: Repo, pkg: Package, target: string): Promise<IndexEnt
  * deploy never publishes what the app would reject. Next to it, `manifest.json` names the
  * package and icon files that target's deploy has to upload besides its own directory.
  *
+ * With `debug`, entries carry {@link debugManifest}'s slug and name, matching what `pack`
+ * wrote with the same flag. Lists still name the packages' own slugs.
+ *
  * @throws `CliError` when a list names a package that does not exist or is not packed.
  */
-export async function indexes(repo: Repo, packages: Package[]): Promise<void> {
+export async function indexes(repo: Repo, packages: Package[], debug = false): Promise<void> {
   const bySlug = new Map(packages.map((pkg) => [pkg.slug, pkg]));
   for (const list of await loadLists(repo)) {
     const missing = list.sources.filter((slug) => !bySlug.has(slug));
@@ -118,7 +134,7 @@ export async function indexes(repo: Repo, packages: Package[]): Promise<void> {
     }
     const members = list.sources.map((slug) => bySlug.get(slug) as Package);
     const entries: IndexEntry[] = [];
-    for (const pkg of members) entries.push(await entry(repo, pkg, list.target));
+    for (const pkg of members) entries.push(await entry(repo, pkg, list.target, debug));
 
     const index = Index.parse({
       name: list.name,
