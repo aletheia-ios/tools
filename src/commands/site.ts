@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { type List, loadLists } from "@/commands/indexes";
+import { type List, loadLists, updatedDate } from "@/commands/indexes";
 import { iconPath, type Package, type Repo } from "@/context";
 import { escapeHTML, qrSVG } from "@/lib/html";
 import { CliError, info } from "@/lib/log";
@@ -281,40 +281,56 @@ function page(
 }
 
 /**
- * The page at the root of the deployed tree.
+ * Apache's folder icon, inlined so the index stays one file. Public domain, from the set NCSA
+ * httpd and Apache ship.
+ */
+const FOLDER_ICON =
+  "data:image/gif;base64,R0lGODlhFAAWAMIAAP/////Mmcz//5lmMzMzMwAAAAAAAAAAACH+TlRoaXMgYXJ0IGlzIGluIHRoZSBwdWJsaWMgZG9tYWluLiBLZXZpbiBIdWdoZXMsIGtldmluaEBlaXQuY29tLCBTZXB0ZW1iZXIgMTk5NQAh+QQBAAACACwAAAAAFAAWAAADVCi63P4wyklZufjOErrvRcR9ZKYpxUB6aokGQyzHKxyO9RoTV54PPJyPBewNSUXhcWc8soJOIjTaSVJhVphWxd3CeILUbDwmgMPmtHrNIyxM8Iw7AQA7";
+
+/** How much of an ISO 8601 date runs to the minute, which is as fine as Apache's listing goes. */
+const TO_THE_MINUTE = "YYYY-MM-DDTHH:MM".length;
+
+/**
+ * An index of every list, in the look of an Apache directory listing.
  *
  * A host serves the tree from its root, and nothing lives there: the pages are one directory
  * down, per list. Without this, the address someone is most likely to try is a 404. One list
- * forwards straight to it, since a menu of one is not a choice.
+ * forwards straight to it, since a menu of one is not a choice. `dir` is the path the index is
+ * titled after and `href` where it finds each list's page from there. An adult list sorts
+ * last, so the index never leads with one.
+ *
+ * The column headers are plain text, not Apache's sort links: Apache sorts on the server, and a
+ * static host would answer every one of them with this same page.
  */
-function landing(lists: List[]): string {
-  const one = lists.length === 1 ? (lists[0] as List) : null;
+function landing(lists: [List, Package[]][], dir: string, href: (list: List) => string): string {
+  const one = lists.length === 1 ? (lists[0] as [List, Package[]])[0] : null;
   const forward =
-    one === null ? "" : `\n<meta http-equiv="refresh" content="0; url=${one.target}/site/">`;
-  const links = lists
-    .map(
-      (list) => `<li><a href="${escapeHTML(list.target)}/site/">${escapeHTML(list.name)}</a></li>`,
-    )
-    .join("\n      ");
+    one === null ? "" : `\n<meta http-equiv="refresh" content="0; url=${escapeHTML(href(one))}">`;
+  const rows = [...lists]
+    .sort(([a], [b]) => Number(a.adult === true) - Number(b.adult === true))
+    .map(([list, members]) => {
+      // every date is utc from toISOString, so text order is time order
+      const latest = members.map(updatedDate).sort().at(-1) as string;
+      const updated = latest.slice(0, TO_THE_MINUTE).replace("T", " ");
+      const count = members.length === 1 ? "1 source" : `${members.length} sources`;
+      return `<tr><td valign="top"><img src="${FOLDER_ICON}" alt="[DIR]"></td><td><a href="${escapeHTML(href(list))}">${escapeHTML(list.name)}/</a></td><td align="right">${updated}</td><td align="right">-</td><td>${count}</td></tr>`;
+    })
+    .join("\n");
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Aletheia lists</title>${forward}
-<style>${STYLE}
-ul { list-style: none; padding: 0; margin: 0; }
-li { margin: 0 0 .6rem; }
-</style>
+<title>Index of ${dir}</title>${forward}
 </head>
 <body>
-  <main>
-    <h1>Lists</h1>
-    <p class="lede">Each of these can be added to Aletheia.</p>
-    <ul>
-      ${links}
-    </ul>
-  </main>
+<h1>Index of ${dir}</h1>
+<table>
+<tr><th></th><th>Name</th><th>Last modified</th><th>Size</th><th>Description</th></tr>
+<tr><th colspan="5"><hr></th></tr>
+${rows}
+<tr><th colspan="5"><hr></th></tr>
+</table>
 </body>
 </html>
 `;
@@ -349,13 +365,17 @@ async function icons(repo: Repo, members: Package[]): Promise<[Package, string][
  * custom domain, a staging bucket. Without it each list's own `url` is used, and a list that
  * has neither is skipped with a note, since the deep link and QR have nothing to point at.
  *
+ * Every page written is then indexed twice: `dist/index.html` for a host serving the tree as
+ * it is, and `dist/sources.html` for a bucket, where each list's page is the object
+ * `sources/<target>` and the index goes up as `sources` beside them.
+ *
  * @throws `CliError` when a list names a package that does not exist or is not packed.
  */
 export async function site(repo: Repo, packages: Package[], base?: string): Promise<void> {
   const bySlug = new Map(packages.map((pkg) => [pkg.slug, pkg]));
   const source = await repository(repo);
   const root = base?.replace(TRAILING_SLASH, "");
-  const written: List[] = [];
+  const written: [List, Package[]][] = [];
   for (const list of await loadLists(repo)) {
     const missing = list.sources.filter((slug) => !bySlug.has(slug));
     if (missing.length > 0) {
@@ -372,11 +392,18 @@ export async function site(repo: Repo, packages: Package[], base?: string): Prom
     const out = sitePath(repo, list.target);
     await mkdir(out, { recursive: true });
     await writeFile(join(out, "index.html"), page(list, url, withIcons, source));
-    written.push(list);
+    written.push([list, members]);
     info(`${list.target}/site/index.html: ${members.length} source(s)`);
   }
 
   if (written.length === 0) return;
-  await writeFile(join(repo.dist, "index.html"), landing(written));
-  info(`index.html: ${written.length} list(s)`);
+  await writeFile(
+    join(repo.dist, "index.html"),
+    landing(written, "/", (list) => `${list.target}/site/`),
+  );
+  await writeFile(
+    join(repo.dist, "sources.html"),
+    landing(written, "/sources", (list) => `/sources/${list.target}`),
+  );
+  info(`index.html, sources.html: ${written.length} list(s)`);
 }

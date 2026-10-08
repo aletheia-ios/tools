@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import process from "node:process";
 import { promisify } from "node:util";
 import { capture, cleanupRepos, scaffold, tempRepo } from "@test/repo";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
@@ -189,6 +190,54 @@ describe("site", () => {
     expect(html).toContain('href="main/site/"');
   });
 
+  it("writes the same index for a bucket, linking each list's object under sources/", async () => {
+    // arrange
+    const repo = await tempRepo({
+      lists: { main: LIST, adult: { ...LIST, name: "Adult", target: "adult", adult: true } },
+    });
+    const captured = capture();
+    const pkg = await scaffold(repo, "demo");
+    await pack(repo, [pkg]);
+
+    // act
+    await site(repo, [pkg]);
+    const html = await readFile(join(repo.dist, "sources.html"), "utf8");
+
+    // assert
+    expect(html).toContain("<h1>Index of /sources</h1>");
+    expect(html).toContain('href="/sources/main">Aletheia Sources/</a>');
+    expect(html).toContain('href="/sources/adult">Adult/</a>');
+    expect(html).toContain("1 source");
+    expect(captured.out).toContain("index.html, sources.html: 2 list(s)");
+  });
+
+  it("dates a list by the last commit to any of its sources", async () => {
+    // arrange
+    const repo = await tempRepo({ lists: { main: LIST } });
+    capture();
+    const pkg = await scaffold(repo, "demo");
+    await writeFile(join(repo.root, ".gitignore"), "dist/\n");
+    // a pre-commit hook exports GIT_INDEX_FILE, which would point this repo's add at the real one
+    const env = Object.fromEntries(
+      Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
+    );
+    env.GIT_AUTHOR_DATE = "2024-05-06T07:08:09Z";
+    env.GIT_COMMITTER_DATE = "2024-05-06T07:08:09Z";
+    const git = promisify(execFile);
+    const identity = ["-c", "user.email=t@e.st", "-c", "user.name=t"];
+    await git("git", ["init", "-q"], { cwd: repo.root, env });
+    await git("git", [...identity, "add", "."], { cwd: repo.root, env });
+    await git("git", [...identity, "commit", "-q", "-m", "init"], { cwd: repo.root, env });
+    await pack(repo, [pkg]);
+
+    // act
+    await site(repo, [pkg]);
+    const html = await readFile(join(repo.dist, "index.html"), "utf8");
+
+    // assert
+    expect(html).toContain('<td align="right">2024-05-06 07:08</td>');
+  });
+
   it("lists every page at the root when there is more than one", async () => {
     // arrange
     const repo = await tempRepo({
@@ -204,7 +253,7 @@ describe("site", () => {
 
     // assert
     expect(html).toContain('href="main/site/"');
-    expect(html).toContain('href="adult/site/"');
+    expect(html.indexOf('href="main/site/"')).toBeLessThan(html.indexOf('href="adult/site/"'));
     // a menu of two is a choice, so nothing is picked for the reader
     expect(html).not.toContain("http-equiv");
   });

@@ -67,7 +67,7 @@ export async function loadLists(repo: Repo): Promise<List[]> {
  * Taken from git so an unchanged package keeps its date across rebuilds and the app does
  * not see a fresh update every deploy. Falls back to now outside a git checkout.
  */
-function updatedDate(pkg: Package): string {
+export function updatedDate(pkg: Package): string {
   const child = spawnSync("git", ["log", "-1", "--format=%cI", "--", pkg.dir], {
     cwd: pkg.dir,
     encoding: "utf8",

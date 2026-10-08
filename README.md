@@ -76,7 +76,9 @@ a card per source carrying its icon, version, languages and rating. Each source'
 and `source.json` are copied in beside the page, so the folder deploys as-is and every card
 can link to the manifest that says what that source contacts. Generated from the same data as
 the index, so the two cannot disagree. A list marked `"adult": true` gets an age gate that
-fails closed without script.
+fails closed without script. The pages are then indexed in the look of an Apache directory
+listing: `dist/index.html` for a host serving the tree as-is, and `dist/sources.html`, which an
+R2 deploy uploads as `sources` beside each list's `sources/<target>`.
 
 **serve** - runs pack and index, serves `dist/` on the LAN with `cache-control: no-store`, and
 reruns both when anything under `packages/` or `lists/` changes. Point the app's developer list

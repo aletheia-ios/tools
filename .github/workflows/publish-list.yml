@@ -12,7 +12,7 @@ name: publish list
 # two Cloudflare secrets instead, and the R2 job runs in place of the Pages job.
 #
 # The caller's own devDependency provides the cli this runs, so it needs @aletheia-ios/tools
-# 0.5.0 or newer for `site --base`.
+# 0.5.4 or newer for `dist/sources.html`.
 
 on:
   workflow_call:
@@ -167,4 +167,16 @@ jobs:
           npx --yes wrangler r2 object put \
             "$BUCKET/sources/${{ matrix.target }}" \
             --file "dist/${{ matrix.target }}/site/index.html" \
+            --content-type "text/html; charset=utf-8" --remote
+
+      # the index names every target, so it goes up only when they all share one environment and
+      # with it one bucket; each job writes the same file
+      - name: upload the index of lists to r2
+        if: inputs.environment != ''
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BUCKET: ${{ vars.R2_BUCKET || inputs.bucket }}
+        run: |
+          npx --yes wrangler r2 object put "$BUCKET/sources" --file dist/sources.html \
             --content-type "text/html; charset=utf-8" --remote
