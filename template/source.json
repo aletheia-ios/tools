@@ -8,7 +8,10 @@
   "contractVersion": "1.0",
   "languages": ["en"],
   "baseURL": "https://example.com",
-  "referer": "https://example.com",
+  "headers": {
+    "pages": { "Referer": "https://example.com", "Origin": "https://example.com" },
+    "covers": { "Referer": "https://example.com", "Origin": "https://example.com" }
+  },
   "hosts": [],
   "contentRating": "mixed",
   "sort": {
